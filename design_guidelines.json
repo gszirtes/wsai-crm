@@ -1,0 +1,159 @@
+{
+  "theme_archetype": "SWISS & HIGH-CONTRAST (Authority, Clarity, Truth)",
+  "typography": {
+    "headings": {
+      "family": "Cabinet Grotesk",
+      "weights": ["light", "bold", "black"],
+      "usage": "Use for all dashboard titles, metric values, and command bar prompts.",
+      "tracking": "tracking-tight or tracking-tighter for sizes > 32px"
+    },
+    "body": {
+      "family": "IBM Plex Sans",
+      "weights": ["regular", "medium"],
+      "usage": "Use for dense data, table rows, lists, and form inputs."
+    },
+    "forbidden_fonts": ["Inter", "Roboto", "Lato", "Space Grotesk"],
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base",
+      "small_labels": "text-xs uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "light_theme": {
+      "background": "#FFFFFF",
+      "surface": "#F9FAFB",
+      "border": "#E5E7EB",
+      "text_primary": "#030712",
+      "text_secondary": "#4B5563"
+    },
+    "dark_theme": {
+      "background": "#060B19",
+      "surface": "#111827",
+      "border": "#1F2937",
+      "text_primary": "#F9FAFB",
+      "text_secondary": "#9CA3AF"
+    },
+    "accents": {
+      "primary": "#4338CA",
+      "primary_hover": "#3730A3",
+      "ai_glow": "#00E5FF",
+      "danger": "#EF4444",
+      "success": "#10B981"
+    },
+    "forbidden_colors": ["#1B93A4", "teal green", "teal blue", "#7351B7"],
+    "rules": [
+      "Use 95% monochrome. Color exists only to guide action.",
+      "Tinted Grey Rule: Neutral greys must have a tiny bit of blue (cool) or orange (warm).",
+      "Never use pure transparent backgrounds for overlays or headers."
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": [
+      "Flat Solid: Default for dashboard cards. 1px subtle border, no shadow.",
+      "Neumorphism (Clay & Crisp): For widgets/toggles. Mix soft shadow with 1px border.",
+      "Glassmorphism (Crystal/Apple): For AI Command Bar and sticky headers. backdrop-blur-xl bg-white/70 (light) or bg-black/60 (dark), with 1px delicate inner stroke.",
+      "Tracing Beam: For the AI Command Bar focus state. A moving gradient line tracing the border with blur-md behind it."
+    ],
+    "corners": "rounded-sm (2px to 4px) to emphasize the sharp Swiss/Brutalist feel."
+  },
+  "components": {
+    "navigation": {
+      "mobile": "Bottom navigation bar with 4-5 key tabs. Floating glassmorphism island.",
+      "desktop": "Sharp, collapsible left sidebar with 1px right border."
+    },
+    "ai_command_bar": {
+      "description": "Signature feature. Central floating pill or prominent top bar. Uses glassmorphism and tracing beam on focus. Free-form text input with inline suggestion chips.",
+      "path": "src/components/ui/command.jsx"
+    },
+    "cards_and_widgets": {
+      "description": "Cardless or dense rectangular styles. Do not overuse standard Shadcn cards. Use raw divs with border-r and border-b in a grid to create technical grids."
+    },
+    "kanban_board": {
+      "description": "Desktop: Traditional vertical columns. Mobile: Card rows or swipeable columns. Minimalist cards showing 2-3 key metrics."
+    },
+    "data_tables": {
+      "description": "Mobile: Expandable list items. Desktop: Dense data tables with hover lifts (-translate-y-px) and subtle shadow."
+    }
+  },
+  "grids": {
+    "dashboard_mode": "High Density Grid. grid-cols-1 md:grid-cols-3 lg:grid-cols-4. gap-4 or gap-6.",
+    "bento_rules": [
+      "Every pixel must be utilized.",
+      "Summary widgets: col-span-1.",
+      "Primary data (Charts/Kanban): col-span-2 row-span-2 or col-span-3.",
+      "Use align-self: stretch for items to fill layout.",
+      "Mobile-First: Always start with grid-cols-1."
+    ]
+  },
+  "layouts": {
+    "spacing": "Generous container spacing. Use p-6 or p-8 inside cards to prevent text collision. For footers/end sections, use py-20.",
+    "alignment": "Optical alignment over geometrical. Left-align dense data, labels, and forms. Center-align only for global empty states or AI prompts."
+  },
+  "motion": {
+    "rules": [
+      "Hover states for all interactive elements (transition: transform 0.2s ease, opacity 0.2s ease).",
+      "Do NOT use 'transition: all'.",
+      "Micro-animations on tab switches and command bar activation.",
+      "Entrance staggered animations for list items and kanban cards."
+    ]
+  },
+  "accessibility": {
+    "contrast": "Minimum 4.5:1 for normal text. 3:1 for large text/interactive elements. Use APCA contrast calculator.",
+    "hover_states": "Always explicitly set text color on hover (e.g., hover:bg-slate-900 hover:text-white).",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='ai-command-input')."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBidXNpbmVzcyUyMHBvcnRyYWl0fGVufDB8fHx8MTc4Mzg5MjcwNnww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional woman smiling",
+        "category": "user_avatar"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBidXNpbmVzcyUyMHBvcnRyYWl0fGVufDB8fHx8MTc4Mzg5MjcwNnww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional man standing",
+        "category": "user_avatar"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1557264322-b44d383a2906?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBtaW5pbWFsaXN0JTIwYXJ0fGVufDB8fHx8MTc4NDAwNDUwNnww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract dark minimalist art",
+        "category": "login_background_or_empty_state"
+      }
+    ],
+    "rules": [
+      "Never use placeholder URLs.",
+      "Mobile images max-h-[80vh]."
+    ]
+  },
+  "3d_libraries_and_steps": {
+    "recommendation": "TSParticles",
+    "usage": "Use lightweight TSParticles for floating constellation nodes behind the login screen or within the AI Command Bar idle state to subtly communicate 'AI network' without heavy WebGL overhead."
+  },
+  "instructions_to_main_agent": [
+    "Build a mobile-first UI with a bottom navigation bar for small screens and a side/top nav for desktop.",
+    "Implement the 'AI Command Bar' as a signature feature using glassmorphism and a prominent floating layout.",
+    "Ensure global language switcher (EN/HU) is easily accessible.",
+    "Role-based access should be visually distinct (e.g., admin settings only visible if role=admin).",
+    "Customize Shadcn components using the defined colors and rounded-sm border radii. Do not use generic Shadcn styles.",
+    "Use .js/jsx files, not .tsx as per project config.",
+    "Include data-testid on every interactive element."
+  ],
+  "general_ui_ux_design_guidelines": [
+    "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing.",
+    "Prioritize optical alignment over geometric alignment.",
+    "Layer elements to create depth with z-index hierarchies.",
+    "Use progressive disclosure on mobile to prevent info overload."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "Do not converge toward generic 'AI slop' aesthetics. Use the provided typography (Cabinet Grotesk + IBM Plex Sans) to stand out.",
+    "Do not apply 'transition: all'. Explicitly list transitioned properties.",
+    "Do not center-align the app container (.App { text-align: center; } is forbidden).",
+    "Never use AI assistant emoji characters for icons.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Missing categories = do NOT use placeholder text. Use provided image URLs."
+  ]
+}
