@@ -75,6 +75,9 @@ const STATUS_COLORS = {
   high: "bg-danger/15 text-danger",
   medium: "bg-amber-500/15 text-amber-600",
   low: "bg-slate-500/15 text-slate-500",
+  on_track: "bg-success/15 text-success",
+  at_risk: "bg-amber-500/15 text-amber-600",
+  over_budget: "bg-danger/15 text-danger",
 };
 
 export function Badge({ value, label, className = "" }) {

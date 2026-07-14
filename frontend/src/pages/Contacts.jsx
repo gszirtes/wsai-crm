@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Search, Pencil, Trash2, Mail, Phone } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Search, Pencil, Trash2, Mail, Phone, Download, Upload } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea } from "../components/common";
@@ -11,6 +12,8 @@ const empty = { first_name: "", last_name: "", email: "", phone: "", title: "", 
 export default function Contacts() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const fileRef = useRef(null);
   const writable = can.write(user);
   const [items, setItems] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -47,15 +50,33 @@ export default function Contacts() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  const exportCsv = () => {
+    const url = `${process.env.REACT_APP_BACKEND_URL}/api/export/contacts.csv`;
+    window.open(url, "_blank");
+  };
+  const importCsv = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await api.post("/import/contacts", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    alert(`${r.data.created} ${t("io.importDone")}${r.data.errors.length ? ` · ${r.data.errors.length} ${t("io.errors")}` : ""}`);
+    e.target.value = "";
+    load();
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{t("contact.title")}</h1>
-        {writable && (
-          <Button onClick={openNew} data-testid="add-contact-btn">
-            <Plus size={16} /> <span className="hidden sm:inline">{t("contact.newContact")}</span>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <button onClick={exportCsv} data-testid="export-contacts-btn" title={t("io.export")} className="p-2.5 rounded-sm border border-border text-muted hover:bg-surface transition-colors"><Download size={16} /></button>
+          {writable && <>
+            <input ref={fileRef} type="file" accept=".csv" onChange={importCsv} className="hidden" data-testid="import-contacts-input" />
+            <button onClick={() => fileRef.current?.click()} data-testid="import-contacts-btn" title={t("io.import")} className="p-2.5 rounded-sm border border-border text-muted hover:bg-surface transition-colors"><Upload size={16} /></button>
+            <Button onClick={openNew} data-testid="add-contact-btn"><Plus size={16} /><span className="hidden sm:inline">{t("contact.newContact")}</span></Button>
+          </>}
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -74,7 +95,7 @@ export default function Contacts() {
       ) : (
         <div className="border border-border rounded-sm overflow-hidden stagger">
           {items.map((c) => (
-            <div key={c.id} data-testid={`contact-row-${c.id}`} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors">
+            <div key={c.id} data-testid={`contact-row-${c.id}`} onClick={() => navigate(`/contacts/${c.id}`)} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors cursor-pointer">
               <div className="w-9 h-9 rounded-sm bg-primary/15 text-primary flex items-center justify-center text-sm font-bold shrink-0">
                 {c.first_name?.[0]?.toUpperCase()}
               </div>
@@ -91,8 +112,8 @@ export default function Contacts() {
               <Badge value={c.status} label={t(`statuses.${c.status}`)} />
               {writable && (
                 <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => openEdit(c)} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
-                  <button onClick={() => del(c.id)} data-testid={`delete-contact-${c.id}`} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); del(c.id); }} data-testid={`delete-contact-${c.id}`} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
                 </div>
               )}
             </div>

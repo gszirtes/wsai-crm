@@ -94,6 +94,8 @@ class Project(Base):
     status = Column(String, default="planning")  # planning, active, on_hold, completed, cancelled
     priority = Column(String, default="medium")  # low, medium, high
     budget = Column(Float, default=0)
+    estimated_hours = Column(Float, default=0)
+    hourly_rate = Column(Float, default=0)
     currency = Column(String, default="EUR")
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
@@ -117,6 +119,18 @@ class Activity(Base):
     deal_id = Column(String, ForeignKey("deals.id"), nullable=True)
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    hours = Column(Float, default=0)
+    description = Column(String, nullable=True)
+    billable = Column(Boolean, default=True)
+    entry_date = Column(DateTime(timezone=True), default=utcnow)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 

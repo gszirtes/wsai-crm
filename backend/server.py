@@ -10,7 +10,7 @@ from database import engine, Base, SessionLocal
 from models import User, Company, Contact, Deal, Project, Activity
 from auth import hash_password, verify_password
 from routers import (auth_router, users, companies, contacts, deals, projects,
-                     activities, dashboard, ai_router, settings_router)
+                     activities, dashboard, ai_router, settings_router, data_io)
 
 app = FastAPI(title="wespeak.ai CRM")
 
@@ -32,6 +32,7 @@ app.include_router(activities.router)
 app.include_router(dashboard.router)
 app.include_router(ai_router.router)
 app.include_router(settings_router.router)
+app.include_router(data_io.router)
 
 
 @app.get("/api/health")
@@ -41,6 +42,11 @@ def health():
 
 def seed():
     Base.metadata.create_all(bind=engine)
+    # lightweight column migrations for existing installs
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS estimated_hours DOUBLE PRECISION DEFAULT 0"))
+        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS hourly_rate DOUBLE PRECISION DEFAULT 0"))
     db = SessionLocal()
     try:
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@wespeak.ai")

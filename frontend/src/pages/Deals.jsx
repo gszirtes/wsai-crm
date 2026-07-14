@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Plus, Pencil, Trash2, LayoutGrid, List } from "lucide-react";
 import api from "../api";
@@ -12,6 +13,7 @@ const empty = { title: "", value: 0, currency: "EUR", stage: "lead", company_id:
 export default function Deals() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const writable = can.write(user);
   const [items, setItems] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -91,13 +93,14 @@ export default function Deals() {
                           {(prov) => (
                             <div ref={prov.innerRef} {...prov.draggableProps} {...prov.dragHandleProps}
                               data-testid={`deal-card-${d.id}`}
-                              className="bg-bg border border-border rounded-sm p-3 group hover:border-primary transition-colors">
+                              onClick={() => navigate(`/deals/${d.id}`)}
+                              className="bg-bg border border-border rounded-sm p-3 group hover:border-primary transition-colors cursor-pointer">
                               <div className="flex items-start justify-between gap-2">
                                 <span className="text-sm font-medium leading-snug">{d.title}</span>
                                 {writable && (
                                   <div className="hidden group-hover:flex gap-1 shrink-0">
-                                    <button onClick={() => openEdit(d)} className="text-muted hover:text-txt"><Pencil size={13} /></button>
-                                    <button onClick={() => del(d.id)} className="text-muted hover:text-danger"><Trash2 size={13} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); openEdit(d); }} className="text-muted hover:text-txt"><Pencil size={13} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); del(d.id); }} className="text-muted hover:text-danger"><Trash2 size={13} /></button>
                                   </div>
                                 )}
                               </div>
@@ -118,7 +121,7 @@ export default function Deals() {
       ) : (
         <div className="border border-border rounded-sm overflow-hidden stagger">
           {items.map((d) => (
-            <div key={d.id} data-testid={`deal-row-${d.id}`} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors">
+            <div key={d.id} data-testid={`deal-row-${d.id}`} onClick={() => navigate(`/deals/${d.id}`)} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors cursor-pointer">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">{d.title}</div>
                 <div className="text-xs text-muted">{d.probability}%</div>
@@ -127,8 +130,8 @@ export default function Deals() {
               <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
               {writable && (
                 <div className="flex gap-1 shrink-0">
-                  <button onClick={() => openEdit(d)} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
-                  <button onClick={() => del(d.id)} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); openEdit(d); }} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); del(d.id); }} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
                 </div>
               )}
             </div>

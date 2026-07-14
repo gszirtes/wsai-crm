@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Deal, User
+from models import Deal, Company, Contact, Activity, User
 from schemas import DealCreate, DealOut, StageUpdate
 from auth import get_current_user, require_write
 
@@ -18,6 +18,25 @@ def list_deals(stage: str = "", db: Session = Depends(get_db),
     if stage:
         q = q.filter(Deal.stage == stage)
     return q.order_by(Deal.created_at.desc()).all()
+
+
+@router.get("/{deal_id}/detail")
+def deal_detail(deal_id: str, db: Session = Depends(get_db),
+                _: User = Depends(get_current_user)):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    company = db.query(Company).filter(Company.id == d.company_id).first() if d.company_id else None
+    contact = db.query(Contact).filter(Contact.id == d.contact_id).first() if d.contact_id else None
+    activities = db.query(Activity).filter(Activity.deal_id == deal_id) \
+        .order_by(Activity.created_at.desc()).all()
+    from schemas import ActivityOut
+    return {
+        "deal": DealOut.model_validate(d).model_dump(),
+        "company_name": company.name if company else None,
+        "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip() if contact else None,
+        "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
+    }
 
 
 @router.get("/{deal_id}", response_model=DealOut)

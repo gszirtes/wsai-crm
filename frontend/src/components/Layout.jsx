@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   LayoutGrid, Users, Building2, Handshake, FolderKanban, CheckSquare,
-  Settings, LogOut, Moon, Sun, Globe, Shield,
+  Settings, LogOut, Moon, Sun, Globe, Shield, CalendarDays,
 } from "lucide-react";
 import { useAuth, can } from "../auth";
 import i18n from "../i18n";
@@ -16,9 +16,16 @@ const NAV = [
   { to: "/deals", key: "deals", icon: Handshake },
   { to: "/projects", key: "projects", icon: FolderKanban },
   { to: "/activities", key: "activities", icon: CheckSquare },
+  { to: "/calendar", key: "calendar", icon: CalendarDays },
 ];
 
-const MOBILE_NAV = NAV.slice(0, 5);
+const MOBILE_NAV = [
+  { to: "/", key: "dashboard", icon: LayoutGrid, exact: true },
+  { to: "/contacts", key: "contacts", icon: Users },
+  { to: "/deals", key: "deals", icon: Handshake },
+  { to: "/projects", key: "projects", icon: FolderKanban },
+  { to: "/calendar", key: "calendar", icon: CalendarDays },
+];
 
 function useTheme() {
   const [dark, setDark] = useState(

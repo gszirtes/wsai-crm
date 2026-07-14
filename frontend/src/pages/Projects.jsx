@@ -1,17 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Pencil, Trash2, FolderKanban } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Pencil, Trash2, FolderKanban, Clock } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea } from "../components/common";
 
 const STATUSES = ["planning", "active", "on_hold", "completed", "cancelled"];
 const PRIORITIES = ["low", "medium", "high"];
-const empty = { name: "", description: "", status: "planning", priority: "medium", budget: 0, currency: "EUR", company_id: "" };
+const empty = { name: "", description: "", status: "planning", priority: "medium", budget: 0, estimated_hours: 0, hourly_rate: 0, currency: "EUR", company_id: "" };
 
 export default function Projects() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const writable = can.write(user);
   const [items, setItems] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -27,7 +29,7 @@ export default function Projects() {
   const openNew = () => { setForm(empty); setEditing(null); setModal(true); };
   const openEdit = (p) => { setForm({ ...empty, ...p, company_id: p.company_id || "" }); setEditing(p.id); setModal(true); };
   const save = async () => {
-    const payload = { ...form, budget: parseFloat(form.budget) || 0, company_id: form.company_id || null };
+    const payload = { ...form, budget: parseFloat(form.budget) || 0, estimated_hours: parseFloat(form.estimated_hours) || 0, hourly_rate: parseFloat(form.hourly_rate) || 0, company_id: form.company_id || null };
     if (editing) await api.put(`/projects/${editing}`, payload);
     else await api.post("/projects", payload);
     setModal(false); load();
@@ -38,7 +40,6 @@ export default function Projects() {
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
-  const companyName = (id) => companies.find((c) => c.id === id)?.name;
 
   return (
     <div className="space-y-5">
@@ -58,10 +59,11 @@ export default function Projects() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger">
           {items.map((p) => (
-            <div key={p.id} data-testid={`project-card-${p.id}`} className="border border-border rounded-sm p-5 hover:-translate-y-px transition-transform duration-200">
+            <div key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/projects/${p.id}`)} className="border border-border rounded-sm p-5 hover:-translate-y-px transition-transform duration-200 cursor-pointer">
               <div className="flex items-start justify-between gap-2">
                 <div className="w-10 h-10 rounded-sm bg-primary/15 text-primary flex items-center justify-center shrink-0"><FolderKanban size={18} /></div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <Badge value={p.health} label={t(`health.${p.health}`)} />
                   <Badge value={p.priority} label={t(`statuses.${p.priority}`)} />
                   <Badge value={p.status} label={t(`statuses.${p.status}`)} />
                 </div>
@@ -69,13 +71,13 @@ export default function Projects() {
               <div className="font-display font-bold text-lg mt-3">{p.name}</div>
               {p.description && <p className="text-sm text-muted mt-1 line-clamp-2">{p.description}</p>}
               <div className="flex items-center justify-between mt-4 text-sm">
-                <span className="text-muted">{companyName(p.company_id) || "—"}</span>
+                <span className="text-muted flex items-center gap-1"><Clock size={13} />{p.logged_hours || 0}h / {p.estimated_hours || 0}h</span>
                 <span className="font-medium">{eur(p.budget)}</span>
               </div>
               {writable && (
                 <div className="flex gap-1 mt-3 pt-3 border-t border-border">
-                  <button onClick={() => openEdit(p)} data-testid={`edit-project-${p.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-sm text-xs text-muted hover:bg-surface transition-colors"><Pencil size={13} />{t("common.edit")}</button>
-                  <button onClick={() => del(p.id)} data-testid={`delete-project-${p.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-sm text-xs text-muted hover:text-danger hover:bg-danger/10 transition-colors"><Trash2 size={13} />{t("common.delete")}</button>
+                  <button onClick={(e) => { e.stopPropagation(); openEdit(p); }} data-testid={`edit-project-${p.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-sm text-xs text-muted hover:bg-surface transition-colors"><Pencil size={13} />{t("common.edit")}</button>
+                  <button onClick={(e) => { e.stopPropagation(); del(p.id); }} data-testid={`delete-project-${p.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-sm text-xs text-muted hover:text-danger hover:bg-danger/10 transition-colors"><Trash2 size={13} />{t("common.delete")}</button>
                 </div>
               )}
             </div>
@@ -106,6 +108,10 @@ export default function Projects() {
               {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("time.estimated") + " (" + t("time.hours").toLowerCase() + ")"}><Input data-testid="project-estimated-hours" type="number" value={form.estimated_hours} onChange={set("estimated_hours")} /></Field>
+          <Field label={t("time.rate")}><Input data-testid="project-hourly-rate" type="number" value={form.hourly_rate} onChange={set("hourly_rate")} /></Field>
         </div>
       </Modal>
     </div>

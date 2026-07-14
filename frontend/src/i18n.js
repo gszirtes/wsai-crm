@@ -11,6 +11,7 @@ const en = {
       deals: "Deals",
       projects: "Projects",
       activities: "Activities",
+      calendar: "Calendar",
       users: "Users",
       settings: "Settings",
       logout: "Log out",
@@ -167,6 +168,28 @@ const en = {
       created: "Created",
       notConfigured: "AI not configured. Add an OpenRouter key in Settings.",
     },
+    time: {
+      title: "Time & effort",
+      logged: "Logged", estimated: "Estimated", remaining: "Remaining",
+      addTime: "Log time", hours: "Hours", billable: "Billable",
+      rate: "Hourly rate", amount: "Billable amount", noEntries: "No time logged yet",
+      logHours: "Log hours",
+    },
+    health: {
+      label: "Health", on_track: "On track", at_risk: "At risk",
+      over_budget: "Over budget", completed: "Completed", cancelled: "Cancelled",
+    },
+    detail: {
+      back: "Back", overview: "Overview", deals: "Deals", contacts: "Contacts",
+      projects: "Projects", timeline: "Activity timeline", noActivities: "No activities yet",
+      noItems: "Nothing here yet",
+    },
+    calendar: { title: "Calendar", today: "Today", noTasks: "No tasks this day" },
+    io: {
+      export: "Export CSV", import: "Import CSV", importContacts: "Import contacts",
+      chooseFile: "Choose a .csv file", importDone: "contacts imported", errors: "errors",
+      exportData: "Export", hint: "CSV with columns: first_name, last_name, email, phone, title, status, company",
+    },
     roles: { admin: "Admin", manager: "Manager", user: "User", guest: "Guest" },
     statuses: {
       lead: "Lead", prospect: "Prospect", customer: "Customer", inactive: "Inactive",
@@ -189,6 +212,7 @@ const hu = {
       deals: "Üzletek",
       projects: "Projektek",
       activities: "Tevékenységek",
+      calendar: "Naptár",
       users: "Felhasználók",
       settings: "Beállítások",
       logout: "Kijelentkezés",
@@ -344,6 +368,28 @@ const hu = {
       thinking: "Gondolkodom…",
       created: "Létrehozva",
       notConfigured: "Az AI nincs beállítva. Adj meg egy OpenRouter kulcsot a Beállításokban.",
+    },
+    time: {
+      title: "Idő és ráfordítás",
+      logged: "Rögzített", estimated: "Becsült", remaining: "Hátralévő",
+      addTime: "Idő rögzítése", hours: "Óra", billable: "Számlázható",
+      rate: "Óradíj", amount: "Számlázható összeg", noEntries: "Még nincs rögzített idő",
+      logHours: "Órák rögzítése",
+    },
+    health: {
+      label: "Állapot", on_track: "Ütemben", at_risk: "Veszélyben",
+      over_budget: "Túllépve", completed: "Befejezett", cancelled: "Törölve",
+    },
+    detail: {
+      back: "Vissza", overview: "Áttekintés", deals: "Üzletek", contacts: "Kapcsolatok",
+      projects: "Projektek", timeline: "Tevékenység idővonal", noActivities: "Még nincs tevékenység",
+      noItems: "Itt még nincs semmi",
+    },
+    calendar: { title: "Naptár", today: "Ma", noTasks: "Nincs feladat ezen a napon" },
+    io: {
+      export: "CSV export", import: "CSV import", importContacts: "Kapcsolatok importálása",
+      chooseFile: "Válassz .csv fájlt", importDone: "kapcsolat importálva", errors: "hiba",
+      exportData: "Exportálás", hint: "CSV oszlopok: first_name, last_name, email, phone, title, status, company",
     },
     roles: { admin: "Admin", manager: "Menedzser", user: "Felhasználó", guest: "Vendég" },
     statuses: {

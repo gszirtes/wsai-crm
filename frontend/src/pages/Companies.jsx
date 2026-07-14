@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { Plus, Search, Pencil, Trash2, Globe, Building2 } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
@@ -10,6 +11,7 @@ const empty = { name: "", industry: "", website: "", phone: "", email: "", addre
 export default function Companies() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const writable = can.write(user);
   const [items, setItems] = useState(null);
   const [search, setSearch] = useState("");
@@ -52,20 +54,20 @@ export default function Companies() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
           {items.map((c) => (
-            <div key={c.id} data-testid={`company-card-${c.id}`} className="border border-border rounded-sm p-5 hover:-translate-y-px transition-transform duration-200">
+            <div key={c.id} data-testid={`company-card-${c.id}`} onClick={() => navigate(`/companies/${c.id}`)} className="border border-border rounded-sm p-5 hover:-translate-y-px transition-transform duration-200 cursor-pointer">
               <div className="flex items-start justify-between">
                 <div className="w-10 h-10 rounded-sm bg-glow/15 text-glow flex items-center justify-center shrink-0"><Building2 size={18} /></div>
                 {writable && (
                   <div className="flex gap-1">
-                    <button onClick={() => openEdit(c)} data-testid={`edit-company-${c.id}`} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
-                    <button onClick={() => del(c.id)} data-testid={`delete-company-${c.id}`} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} data-testid={`edit-company-${c.id}`} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); del(c.id); }} data-testid={`delete-company-${c.id}`} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
                   </div>
                 )}
               </div>
               <div className="font-display font-bold text-lg mt-3 truncate">{c.name}</div>
               <div className="text-sm text-muted">{c.industry || "—"}{c.size && ` · ${c.size}`}</div>
               {c.website && (
-                <a href={`https://${c.website.replace(/^https?:\/\//, "")}`} target="_blank" rel="noreferrer" className="text-xs text-primary flex items-center gap-1 mt-2 hover:underline">
+                <a href={`https://${c.website.replace(/^https?:\/\//, "")}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-primary flex items-center gap-1 mt-2 hover:underline">
                   <Globe size={12} /> {c.website}
                 </a>
               )}

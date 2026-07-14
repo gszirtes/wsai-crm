@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 2 backend + frontend testing complete. Extended pytest suite to 35 tests (17 new for iteration 2: project time tracking + health, 4 detail endpoints, CSV import/export, RBAC on new endpoints + regression). All 35 backend tests PASS in ~10s. Frontend Playwright covered: login, projects list with health/hours badges, create project with estimated_hours/hourly_rate, ProjectDetail Log-time flow (time-logged updates 0h -> 3h, entry row appears, cleanup), Contacts/Companies/Deals detail navigation, detail-back button, Calendar prev/next + day click, Guest read-only role restrictions. FIXED one blocker: Deals.jsx was importing useNavigate but never calling it — clicking a deal row/card threw ReferenceError 'navigate is not defined'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/export/*.csv (contacts, companies, deals, projects)", "issue": "No auth check on GET vs guest — guest CAN export data. Requirements confirm guest should be able to export, so this is by design; flagging as informational only."},
+      {"endpoint": "POST /api/import/contacts", "issue": "auto-created Company rows do not set industry/website/etc. and status default is 'lead' — acceptable but noted."},
+      {"endpoint": "GET /api/projects", "issue": "No pagination; large-project accounts could bring N+1 hours queries (logged_hours_for called per project). Fine for MVP scale."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Deals.jsx", "issue": "FIXED. useNavigate() was imported but never invoked; clicking [data-testid=deal-row-*] or [data-testid=deal-card-*] threw ReferenceError: navigate is not defined. Added `const navigate = useNavigate();` inside Deals component.", "selector": "[data-testid^='deal-row-'], [data-testid^='deal-card-']", "priority": "HIGH (was blocking deal detail navigation)"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Contacts (guest role)", "issues": ["Import icon button is correctly hidden for guest (writable-gated). Export button is shown to guest — matches requirement 'guest can GET export endpoints'. Confirmed working."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: add pagination + eager-loaded logged_hours aggregate for projects list to avoid N+1 at scale."
+  ],
+  "critical_code_review_comments": [
+    "BUG FIXED by testing agent: Deals.jsx was missing `const navigate = useNavigate();` — main agent should keep this in future refactors.",
+    "backend/routers/contacts.py, companies.py, deals.py — /{id}/detail routes are declared BEFORE the generic /{id} route (correct FastAPI ordering). Good.",
+    "projects.py compute_health returns 'at_risk' when end_date is past — this ignores logged vs estimated for at_risk. Consider also flagging 'at_risk' when logged is >80% of estimated near end_date.",
+    "data_io.py import creates companies inside the loop with individual commits — for very large CSVs this could be slow. Acceptable for MVP.",
+    "TimeEntry deletion has no ownership check — any writable user can delete another user's time entries. Consider allowing only owner+admin/manager to delete.",
+    "ProjectDetail.jsx delete time (delTime) has no confirmation prompt — one-click destructive action. Consider window.confirm.",
+    "Contacts.jsx import: hidden file input works, but there is no user-facing feedback on import result (created/errors) — the response is ignored client-side after triggering reload."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (NEW - 17 iteration-2 tests)",
+    "/app/frontend/src/pages/Deals.jsx (bugfix: added `const navigate = useNavigate();`)"
+  ],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% (all critical iteration-2 flows verified after 1 fix)"},
+  "test_credentials": "admin@wespeak.ai/admin123, guest@wespeak.ai/guest123 (both verified). manager/user still work per regression suite.",
+  "seed_data_creation": "None persistent. Created TEST_UI_TimeProj project + one 3h time entry via UI and deleted them after verification. Also created TEST_ImportCo_* + TEST_Alice/Bob contacts via CSV import test and deleted them.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend: 35 pytest tests all pass (backend_test.py + test_iteration2.py). Use requests.Session() for cookies (samesite=none;secure). Frontend: Deals.jsx navigate bug was fixed by the previous testing agent (added useNavigate()). Login-page testids: auth-email, auth-password, auth-submit. All new page routes (/contacts/:id, /companies/:id, /deals/:id, /projects/:id, /calendar) are wired in App.js. Nav testids: nav-projects, nav-contacts, nav-companies, nav-deals, nav-calendar, nav-users, nav-settings. Guest role UI blocks: add-*-btn, edit-*-*, delete-*-*, log-time-btn, save-time-btn, import-contacts-btn — all correctly hidden via `can.write(user)`. Export button visible to guest by design. AI /api/ai/command still returns expected 400 (no OpenRouter key).",
+  "rca of the issue": "Deals.jsx bug — `useNavigate` from react-router-dom was imported at top of file, and `navigate(...)` was called inside onClick handlers on rows (line 123) and board cards (line 95), but the hook itself `useNavigate()` was never invoked inside the component body. React swallowed the ReferenceError until user interaction. Fix: add `const navigate = useNavigate();` right after the useAuth hook. Verified via re-run of Playwright flow (deal row + deal board card both navigate to /deals/:id successfully now)."
+}

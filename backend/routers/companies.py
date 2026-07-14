@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Company, Contact, User
+from models import Company, Contact, Deal, Project, User
 from schemas import CompanyCreate, CompanyOut
 from auth import get_current_user, require_write
 
@@ -15,6 +15,24 @@ def list_companies(search: str = "", db: Session = Depends(get_db),
     if search:
         q = q.filter(Company.name.ilike(f"%{search}%"))
     return q.order_by(Company.created_at.desc()).all()
+
+
+@router.get("/{company_id}/detail")
+def company_detail(company_id: str, db: Session = Depends(get_db),
+                   _: User = Depends(get_current_user)):
+    c = db.query(Company).filter(Company.id == company_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Company not found")
+    contacts = db.query(Contact).filter(Contact.company_id == company_id).all()
+    deals = db.query(Deal).filter(Deal.company_id == company_id).all()
+    projects = db.query(Project).filter(Project.company_id == company_id).all()
+    from schemas import ContactOut, DealOut, ProjectOut
+    return {
+        "company": CompanyOut.model_validate(c).model_dump(),
+        "contacts": [ContactOut.model_validate(x).model_dump() for x in contacts],
+        "deals": [DealOut.model_validate(x).model_dump() for x in deals],
+        "projects": [ProjectOut.model_validate(x).model_dump() for x in projects],
+    }
 
 
 @router.get("/{company_id}", response_model=CompanyOut)

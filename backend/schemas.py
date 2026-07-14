@@ -129,6 +129,8 @@ class ProjectBase(BaseModel):
     status: Optional[str] = "planning"
     priority: Optional[str] = "medium"
     budget: Optional[float] = 0
+    estimated_hours: Optional[float] = 0
+    hourly_rate: Optional[float] = 0
     currency: Optional[str] = "EUR"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -143,6 +145,30 @@ class ProjectCreate(ProjectBase):
 class ProjectOut(ProjectBase):
     id: str
     owner_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+    logged_hours: Optional[float] = 0
+    health: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TimeEntryCreate(BaseModel):
+    hours: float
+    description: Optional[str] = None
+    billable: Optional[bool] = True
+    entry_date: Optional[datetime] = None
+
+
+class TimeEntryOut(BaseModel):
+    id: str
+    project_id: str
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    hours: float
+    description: Optional[str] = None
+    billable: bool = True
+    entry_date: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
     class Config:

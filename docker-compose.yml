@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-wespeak_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-crm_user}:${POSTGRES_PASSWORD:-change_me}@db:5432/${POSTGRES_DB:-wespeak_crm}
+      JWT_SECRET: ${JWT_SECRET}
+      FERNET_KEY: ${FERNET_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wespeak.ai}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-deepseek/deepseek-chat-v3-0324:free}
+    ports:
+      - "127.0.0.1:8001:8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_BACKEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

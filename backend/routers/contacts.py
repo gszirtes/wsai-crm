@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Contact, Company, User
+from models import Contact, Company, Deal, Activity, User
 from schemas import ContactCreate, ContactOut
 from auth import get_current_user, require_write
 
@@ -27,6 +27,24 @@ def list_contacts(search: str = "", status: str = "", company_id: str = "",
     if company_id:
         q = q.filter(Contact.company_id == company_id)
     return [_to_out(c) for c in q.order_by(Contact.created_at.desc()).all()]
+
+
+@router.get("/{contact_id}/detail")
+def contact_detail(contact_id: str, db: Session = Depends(get_db),
+                   _: User = Depends(get_current_user)):
+    c = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    deals = db.query(Deal).filter(Deal.contact_id == contact_id) \
+        .order_by(Deal.created_at.desc()).all()
+    activities = db.query(Activity).filter(Activity.contact_id == contact_id) \
+        .order_by(Activity.created_at.desc()).all()
+    from schemas import DealOut, ActivityOut
+    return {
+        "contact": _to_out(c).model_dump(),
+        "deals": [DealOut.model_validate(d).model_dump() for d in deals],
+        "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
+    }
 
 
 @router.get("/{contact_id}", response_model=ContactOut)
