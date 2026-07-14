@@ -134,6 +134,19 @@ class TimeEntry(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id"), index=True)
+    key = Column(String, index=True)
+    type = Column(String, default="info")  # auto_overdue, auto_due_today, auto_project_risk, info
+    title = Column(String, nullable=False)
+    body = Column(String, nullable=True)
+    link = Column(String, nullable=True)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
     key = Column(String, primary_key=True)

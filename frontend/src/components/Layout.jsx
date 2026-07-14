@@ -3,11 +3,12 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   LayoutGrid, Users, Building2, Handshake, FolderKanban, CheckSquare,
-  Settings, LogOut, Moon, Sun, Globe, Shield, CalendarDays,
+  Settings, LogOut, Moon, Sun, Globe, Shield, CalendarDays, BarChart3,
 } from "lucide-react";
 import { useAuth, can } from "../auth";
 import i18n from "../i18n";
 import api from "../api";
+import NotificationBell from "./NotificationBell";
 
 const NAV = [
   { to: "/", key: "dashboard", icon: LayoutGrid, exact: true },
@@ -61,6 +62,9 @@ export default function Layout({ children }) {
   };
 
   const nav = [...NAV];
+  if (user && (user.role === "admin" || user.role === "manager")) {
+    nav.push({ to: "/utilization", key: "utilization", icon: BarChart3 });
+  }
   if (can.admin(user)) {
     nav.push({ to: "/users", key: "users", icon: Shield });
     nav.push({ to: "/settings", key: "settings", icon: Settings });
@@ -137,6 +141,7 @@ export default function Layout({ children }) {
             wespeak<span className="text-primary">.ai</span>
           </div>
           <div className="flex items-center gap-1">
+            <NotificationBell />
             <button onClick={toggleLang} data-testid="lang-toggle-mobile" className="p-2 rounded-sm hover:bg-surface transition-colors text-muted">
               <Globe size={18} />
             </button>
@@ -150,6 +155,9 @@ export default function Layout({ children }) {
         </header>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-28 lg:pb-8 max-w-7xl w-full mx-auto">
+          <div className="hidden lg:flex justify-end mb-2 -mt-2">
+            <NotificationBell />
+          </div>
           {children}
         </main>
       </div>

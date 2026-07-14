@@ -14,15 +14,17 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import Activities from "./pages/Activities";
 import Calendar from "./pages/Calendar";
+import Utilization from "./pages/Utilization";
 import UsersPage from "./pages/Users";
 import SettingsPage from "./pages/Settings";
 import { Spinner } from "./components/common";
 
-function Protected({ children, adminOnly }) {
+function Protected({ children, adminOnly, roles }) {
   const { user, checked } = useAuth();
   if (!checked) return <div className="min-h-screen bg-bg"><Spinner /></div>;
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== "admin") return <Navigate to="/" replace />;
+  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
   return <Layout>{children}</Layout>;
 }
 
@@ -41,6 +43,7 @@ function AppRoutes() {
       <Route path="/projects/:id" element={<Protected><ProjectDetail /></Protected>} />
       <Route path="/activities" element={<Protected><Activities /></Protected>} />
       <Route path="/calendar" element={<Protected><Calendar /></Protected>} />
+      <Route path="/utilization" element={<Protected roles={["admin", "manager"]}><Utilization /></Protected>} />
       <Route path="/users" element={<Protected adminOnly><UsersPage /></Protected>} />
       <Route path="/settings" element={<Protected adminOnly><SettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -12,6 +12,7 @@ const en = {
       projects: "Projects",
       activities: "Activities",
       calendar: "Calendar",
+      utilization: "Utilization",
       users: "Users",
       settings: "Settings",
       logout: "Log out",
@@ -190,6 +191,17 @@ const en = {
       chooseFile: "Choose a .csv file", importDone: "contacts imported", errors: "errors",
       exportData: "Export", hint: "CSV with columns: first_name, last_name, email, phone, title, status, company",
     },
+    notif: { title: "Notifications", empty: "You're all caught up", markAll: "Mark all read" },
+    util: {
+      title: "Team utilization", week: "This week", month: "This month",
+      user: "Team member", total: "Total hours", billable: "Billable hours",
+      amount: "Billable amount", rate: "Utilization", teamTotal: "Team total",
+      noData: "No time logged in this period",
+    },
+    email: {
+      log: "Log email", subject: "Subject", body: "Message", direction: "Direction",
+      inbound: "Received", outbound: "Sent", logged: "Email logged",
+    },
     roles: { admin: "Admin", manager: "Manager", user: "User", guest: "Guest" },
     statuses: {
       lead: "Lead", prospect: "Prospect", customer: "Customer", inactive: "Inactive",
@@ -213,6 +225,7 @@ const hu = {
       projects: "Projektek",
       activities: "Tevékenységek",
       calendar: "Naptár",
+      utilization: "Kihasználtság",
       users: "Felhasználók",
       settings: "Beállítások",
       logout: "Kijelentkezés",
@@ -390,6 +403,17 @@ const hu = {
       export: "CSV export", import: "CSV import", importContacts: "Kapcsolatok importálása",
       chooseFile: "Válassz .csv fájlt", importDone: "kapcsolat importálva", errors: "hiba",
       exportData: "Exportálás", hint: "CSV oszlopok: first_name, last_name, email, phone, title, status, company",
+    },
+    notif: { title: "Értesítések", empty: "Minden naprakész", markAll: "Összes olvasottnak" },
+    util: {
+      title: "Csapat kihasználtság", week: "Ezen a héten", month: "Ebben a hónapban",
+      user: "Csapattag", total: "Összes óra", billable: "Számlázható óra",
+      amount: "Számlázható összeg", rate: "Kihasználtság", teamTotal: "Csapat összesen",
+      noData: "Nincs rögzített idő ebben az időszakban",
+    },
+    email: {
+      log: "E-mail rögzítése", subject: "Tárgy", body: "Üzenet", direction: "Irány",
+      inbound: "Beérkezett", outbound: "Elküldött", logged: "E-mail rögzítve",
     },
     roles: { admin: "Admin", manager: "Menedzser", user: "Felhasználó", guest: "Vendég" },
     statuses: {

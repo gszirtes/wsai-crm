@@ -3,18 +3,36 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Mail, Phone, Building2, Handshake, Activity as ActIcon } from "lucide-react";
 import api from "../api";
-import { Badge, Spinner } from "../components/common";
+import { useAuth, can } from "../auth";
+import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
 
 export default function ContactDetail() {
   const { id } = useParams();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const writable = can.write(user);
   const [data, setData] = useState(null);
+  const [modal, setModal] = useState(false);
+  const [email, setEmail] = useState({ direction: "outbound", subject: "", body: "" });
 
   const load = useCallback(() => {
     api.get(`/contacts/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/contacts"));
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
+
+  const logEmail = async () => {
+    const prefix = email.direction === "inbound" ? t("email.inbound") : t("email.outbound");
+    await api.post("/activities", {
+      type: "email",
+      subject: `[${prefix}] ${email.subject}`,
+      description: email.body,
+      contact_id: id,
+    });
+    setModal(false);
+    setEmail({ direction: "outbound", subject: "", body: "" });
+    load();
+  };
 
   if (!data) return <Spinner />;
   const c = data.contact;
@@ -62,7 +80,14 @@ export default function ContactDetail() {
       </div>
 
       <div className="border border-border rounded-sm p-5">
-        <h3 className="font-display font-bold mb-3 flex items-center gap-2"><ActIcon size={16} className="text-glow" />{t("detail.timeline")}</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-display font-bold flex items-center gap-2"><ActIcon size={16} className="text-glow" />{t("detail.timeline")}</h3>
+          {writable && (
+            <Button variant="subtle" onClick={() => setModal(true)} data-testid="log-email-btn" className="py-1.5 px-3 text-xs">
+              <Mail size={13} /> {t("email.log")}
+            </Button>
+          )}
+        </div>
         {data.activities.length === 0 ? <p className="text-sm text-muted">{t("detail.noActivities")}</p> : (
           <div className="space-y-3">
             {data.activities.map((a) => (
@@ -77,6 +102,21 @@ export default function ContactDetail() {
           </div>
         )}
       </div>
+
+      <Modal open={modal} onClose={() => setModal(false)} title={t("email.log")}
+        footer={<>
+          <Button variant="ghost" onClick={() => setModal(false)}>{t("common.cancel")}</Button>
+          <Button onClick={logEmail} data-testid="save-email-btn">{t("common.save")}</Button>
+        </>}>
+        <Field label={t("email.direction")}>
+          <Select data-testid="email-direction" value={email.direction} onChange={(e) => setEmail({ ...email, direction: e.target.value })}>
+            <option value="outbound">{t("email.outbound")}</option>
+            <option value="inbound">{t("email.inbound")}</option>
+          </Select>
+        </Field>
+        <Field label={t("email.subject")}><Input data-testid="email-subject" value={email.subject} onChange={(e) => setEmail({ ...email, subject: e.target.value })} /></Field>
+        <Field label={t("email.body")}><Textarea data-testid="email-body" rows={4} value={email.body} onChange={(e) => setEmail({ ...email, body: e.target.value })} /></Field>
+      </Modal>
     </div>
   );
 }

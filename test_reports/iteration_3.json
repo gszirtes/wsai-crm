@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 backend + frontend testing complete. Added 14 new pytest tests in test_iteration3.py (Utilization RBAC & shape, Notifications shape + full overdue lifecycle + per-user isolation, Email logging on contact detail + guest 403, 4-role login regression). Full suite: 49/49 pytest tests PASS (backend_test.py 18 + test_iteration2.py 17 + test_iteration3.py 14). Frontend Playwright verified: admin notif bell + badge + panel + mark-all clears badge, Utilization nav+page+week/month toggle+rows, user role hides util nav and redirects /utilization to /, guest hides log-email-btn on contact detail, admin can log email and see it in contact timeline, notif-bell visible on mobile header. Fixed a minor i18n gap: en.nav was missing 'utilization' key (was showing raw 'nav.utilization' text in sidebar). Hungarian translation already had it.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/reports/utilization", "issue": "excludes guest users from rows (User.role != 'guest') — by design; also does not paginate. Rate rows sorted by billable_hours desc. OK for MVP."},
+      {"endpoint": "GET /api/notifications", "issue": "_sync runs on every GET; on very large tenants this could be N+1 (per-user tasks + per-user projects + per-project logged hours). Fine for MVP scale."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Layout.jsx / i18n.js", "issue": "FIXED. English i18n bundle was missing nav.utilization key so the sidebar showed the literal 'nav.utilization' for admin. Added 'utilization: \"Utilization\"' to en.nav. Hungarian was already present.", "selector": "[data-testid=nav-utilization]", "priority": "LOW (was cosmetic-only in EN locale)"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Notifications", "issues": ["NotificationBell is mounted TWICE (mobile header + desktop above main). Each instance has independent React state, so 'mark all read' on the visible bell does not update the hidden bell's badge until next 60s poll or reload. Purely cosmetic since only one bell is visible per viewport, but consider lifting state to a shared context/store for cleanliness."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Hoist NotificationBell data to a shared React context/store so both mobile and desktop instances stay in sync after mark-all (no functional impact today).",
+    "OPTIONAL: Add pagination + cached logged-hours to /api/notifications and /api/reports/utilization for large-scale tenants."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/notifications.py: `_sync` commits on every GET even when nothing changed. Consider only committing when session is dirty (db.dirty/db.new/db.deleted) to avoid useless writes.",
+    "backend/routers/notifications.py: overdue check uses `due < now AND due.date() < today`. If a task's due_date is today at an earlier time (e.g. 08:00 UTC and now 15:00 UTC), it will NOT be marked overdue because the second condition fails; only the 'due_today' branch fires. That's intentional per the current UX, but worth noting.",
+    "backend/routers/reports.py: SELECT-all TimeEntry + SELECT-all Project + SELECT-all User for utilization. At scale this could get heavy — add filters and indexes on entry_date/user_id.",
+    "frontend/src/components/NotificationBell.jsx: two independent instances (mobile+desktop) each fetch /api/notifications on mount + every 60s. Consider React Context so the bell only fetches once per user.",
+    "frontend/src/i18n.js: en bundle was missing nav.utilization (fixed). Consider adding an i18n key coverage test to catch these earlier.",
+    "backend/routers/activities.py: create_activity accepts contact_id but does not validate it exists. Sending a bad contact_id will just create an orphan activity. Consider FK validation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py (NEW - 14 tests for utilization, notifications, email logging, 4-role regression)",
+    "/app/frontend/src/i18n.js (bugfix: added en.nav.utilization = 'Utilization')"
+  ],
+  "success_rate": {"backend": "100% (49/49)", "frontend": "100% (all iteration-3 flows verified after 1 i18n fix)"},
+  "test_credentials": "admin@wespeak.ai/admin123, manager@wespeak.ai/manager123, user@wespeak.ai/user123, guest@wespeak.ai/guest123 - all verified.",
+  "seed_data_creation": "All test data cleaned up. Created + deleted transient TEST_UI_it3_* activities and TEST_it3 email activities. No persistent seed changes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend: 49 pytest tests total (backend_test.py + test_iteration2.py + test_iteration3.py) all pass. Set REACT_APP_BACKEND_URL env before pytest — test_iteration2.py reads it directly; conftest.py has a default fallback but iteration2 does not. Suggested: `REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2) pytest /app/backend/tests/ -v`. Iteration 3 features (routes to remember): GET /api/reports/utilization?period=week|month (manager+admin only), GET/POST /api/notifications (per-user), POST /api/notifications/{id}/read, POST /api/notifications/read-all, POST /api/activities {type:email, contact_id} to log emails on contacts. Notifications auto-sync: creating an activity with past due_date & completed=false owned by the same user creates an 'auto_overdue' notification; deleting the activity removes it. Frontend: NotificationBell is mounted TWICE (mobile+desktop), use `is_visible()` filter when counting notif-badge elements. i18n en.nav.utilization was missing and was patched to 'Utilization'. Guest still exists as read-only. AI /api/ai/command still returns expected 400 (no OpenRouter key). Google Workspace still not implemented.",
+  "rca of the issue": "en.nav.utilization missing: In /app/frontend/src/i18n.js the English translation bundle (`en.nav`) did not have a `utilization` key even though a) the Hungarian bundle (`hu.nav`) did have it, and b) Layout.jsx pushes a nav item with key 'utilization' when the user is admin/manager and renders `t('nav.utilization')`. i18next returned the raw key as fallback string. Reproduction: log in as admin@wespeak.ai in EN locale — sidebar shows literal 'nav.utilization' where 'Utilization' should be. Fix: added `utilization: 'Utilization'` to en.nav. Verified visually and via Playwright text_content check that the label now reads 'Utilization'."
+}

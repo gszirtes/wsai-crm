@@ -10,7 +10,8 @@ from database import engine, Base, SessionLocal
 from models import User, Company, Contact, Deal, Project, Activity
 from auth import hash_password, verify_password
 from routers import (auth_router, users, companies, contacts, deals, projects,
-                     activities, dashboard, ai_router, settings_router, data_io)
+                     activities, dashboard, ai_router, settings_router, data_io,
+                     reports, notifications)
 
 app = FastAPI(title="wespeak.ai CRM")
 
@@ -34,6 +35,8 @@ app.include_router(dashboard.router)
 app.include_router(ai_router.router)
 app.include_router(settings_router.router)
 app.include_router(data_io.router)
+app.include_router(reports.router)
+app.include_router(notifications.router)
 
 
 @app.get("/api/health")
