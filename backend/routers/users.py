@@ -11,7 +11,7 @@ VALID_ROLES = {"admin", "manager", "user", "guest"}
 
 
 @router.get("", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_users(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
     return db.query(User).order_by(User.created_at.desc()).all()
 
 
@@ -39,10 +39,14 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     if payload.name is not None:
         user.name = payload.name
     if payload.role is not None and payload.role in VALID_ROLES:
+        if user.id == admin.id and payload.role != "admin":
+            raise HTTPException(status_code=400, detail="You cannot change your own admin role")
         user.role = payload.role
     if payload.locale is not None:
         user.locale = payload.locale
     if payload.active is not None:
+        if user.id == admin.id and payload.active is False:
+            raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
         user.active = payload.active
     if payload.password:
         user.password_hash = hash_password(payload.password)
