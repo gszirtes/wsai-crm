@@ -1,0 +1,185 @@
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+
+
+# ---------- Auth ----------
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+    name: str
+    role: Optional[str] = "user"
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+    avatar_url: Optional[str] = None
+    locale: str = "en"
+    auth_provider: str = "local"
+    google_connected: bool = False
+    active: bool = True
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    locale: Optional[str] = None
+    active: Optional[bool] = None
+    password: Optional[str] = None
+
+
+# ---------- Company ----------
+class CompanyBase(BaseModel):
+    name: str
+    industry: Optional[str] = None
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    size: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CompanyCreate(CompanyBase):
+    pass
+
+
+class CompanyOut(CompanyBase):
+    id: str
+    owner_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Contact ----------
+class ContactBase(BaseModel):
+    first_name: str
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    title: Optional[str] = None
+    status: Optional[str] = "lead"
+    tags: Optional[List[str]] = []
+    notes: Optional[str] = None
+    company_id: Optional[str] = None
+
+
+class ContactCreate(ContactBase):
+    pass
+
+
+class ContactOut(ContactBase):
+    id: str
+    owner_id: Optional[str] = None
+    company_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Deal ----------
+class DealBase(BaseModel):
+    title: str
+    value: Optional[float] = 0
+    currency: Optional[str] = "EUR"
+    stage: Optional[str] = "lead"
+    probability: Optional[int] = 10
+    expected_close: Optional[datetime] = None
+    notes: Optional[str] = None
+    company_id: Optional[str] = None
+    contact_id: Optional[str] = None
+
+
+class DealCreate(DealBase):
+    pass
+
+
+class DealOut(DealBase):
+    id: str
+    owner_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class StageUpdate(BaseModel):
+    stage: str
+
+
+# ---------- Project ----------
+class ProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    status: Optional[str] = "planning"
+    priority: Optional[str] = "medium"
+    budget: Optional[float] = 0
+    currency: Optional[str] = "EUR"
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    company_id: Optional[str] = None
+    contact_id: Optional[str] = None
+
+
+class ProjectCreate(ProjectBase):
+    pass
+
+
+class ProjectOut(ProjectBase):
+    id: str
+    owner_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Activity ----------
+class ActivityBase(BaseModel):
+    type: Optional[str] = "task"
+    subject: str
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+    completed: Optional[bool] = False
+    contact_id: Optional[str] = None
+    company_id: Optional[str] = None
+    deal_id: Optional[str] = None
+    project_id: Optional[str] = None
+
+
+class ActivityCreate(ActivityBase):
+    pass
+
+
+class ActivityOut(ActivityBase):
+    id: str
+    owner_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- AI ----------
+class AICommandRequest(BaseModel):
+    command: str
+
+
+class SettingUpdate(BaseModel):
+    openrouter_api_key: Optional[str] = None
+    openrouter_model: Optional[str] = None
