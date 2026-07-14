@@ -44,13 +44,19 @@ create projects, contacts, deals, summaries). Storage: PostgreSQL.
 - ✅ Deployment: docker-compose, backend+frontend Dockerfiles, nginx SPA+API proxy, pg_dump backup/restore scripts, DEPLOYMENT.md (Hetzner guide), .env.example
 - ✅ Tested: 35/35 backend pytest pass; all frontend flows pass
 
+### Iteration 3 (2026-07-14) — Utilization, Notifications, Email logging
+- ✅ Per-user **Utilization report** (billable hours, amount, utilization % by team member; week/month) — admin+manager only, with bar chart + table
+- ✅ In-app **Notifications** — overdue tasks, tasks due today, projects over-budget/past-deadline; bell + unread badge + panel, mark-read/mark-all, auto-resolve; shared React context (single poll, both bells in sync)
+- ✅ **Email logging to contacts** — record inbound/outbound emails as activities on the contact timeline
+- ✅ Tested: 49/49 backend pytest pass; all frontend flows pass
+
 ## Backlog
 - P0: Google Workspace OAuth (login + Gmail + Calendar) — needs Google Cloud Client ID/Secret (user enters in Settings; scaffold ready)
 - P1: OpenRouter key entry → live AI (needs user key)
-- P2: TimeEntry ownership checks on delete ✅ (owner or admin/manager only); import result toast ✅; projects pagination ✅ (X-Total-Count header + batched hours, no N+1)
-- P2: notifications, email logging to contacts
+- P2: contact_id FK validation on activity create; pagination/indexes for notifications & utilization at scale
+- P2: two-way Gmail sync once Workspace connected
 
 ## Next Tasks
-1. User provides OpenRouter key (in Settings) → AI live
+1. User provides OpenRouter key (Settings) → AI live
 2. User provides Google Cloud OAuth creds → implement Workspace integration
-3. Optional: TS migration (robustness only, not security)
+3. Optional: TS migration (robustness only)

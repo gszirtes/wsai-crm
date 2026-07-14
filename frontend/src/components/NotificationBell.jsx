@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Bell, AlertTriangle, Clock, FolderKanban, Check } from "lucide-react";
-import api from "../api";
+import { useNotifications } from "../context/NotificationContext";
 
 const ICONS = {
   auto_overdue: AlertTriangle,
@@ -14,17 +14,9 @@ const ICONS = {
 export default function NotificationBell() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { data, refresh, markRead, markAll } = useNotifications();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState({ items: [], unread: 0 });
   const ref = useRef(null);
-
-  const load = () => api.get("/notifications").then((r) => setData(r.data)).catch(() => {});
-
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 60000);
-    return () => clearInterval(iv);
-  }, []);
 
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -32,16 +24,13 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const openPanel = () => { setOpen(!open); if (!open) load(); };
+  const openPanel = () => { setOpen(!open); if (!open) refresh(); };
 
   const handleClick = async (n) => {
-    if (!n.read) { await api.post(`/notifications/${n.id}/read`); }
+    if (!n.read) await markRead(n.id);
     setOpen(false);
     if (n.link) navigate(n.link);
-    load();
   };
-
-  const markAll = async () => { await api.post("/notifications/read-all"); load(); };
 
   return (
     <div className="relative" ref={ref}>

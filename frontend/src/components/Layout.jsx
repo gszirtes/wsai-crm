@@ -9,6 +9,7 @@ import { useAuth, can } from "../auth";
 import i18n from "../i18n";
 import api from "../api";
 import NotificationBell from "./NotificationBell";
+import { NotificationProvider } from "../context/NotificationContext";
 
 const NAV = [
   { to: "/", key: "dashboard", icon: LayoutGrid, exact: true },
@@ -71,6 +72,7 @@ export default function Layout({ children }) {
   }
 
   return (
+    <NotificationProvider>
     <div className="min-h-screen bg-bg text-txt flex">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-64 border-r border-border shrink-0 sticky top-0 h-screen">
@@ -184,5 +186,6 @@ export default function Layout({ children }) {
         </div>
       </nav>
     </div>
+    </NotificationProvider>
   );
 }
