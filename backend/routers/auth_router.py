@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy.orm import Session
 from database import get_db
@@ -7,17 +8,24 @@ from auth import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     set_auth_cookies, get_current_user, get_jwt_secret, JWT_ALGORITHM,
 )
+from rate_limit import limiter
 import jwt
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "false").lower() == "true"
+
 
 @router.post("/register", response_model=UserOut)
-def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def register(request: Request, payload: RegisterRequest, response: Response,
+             db: Session = Depends(get_db)):
+    if not ALLOW_REGISTRATION:
+        raise HTTPException(status_code=403,
+                            detail="Registration is disabled. Contact an administrator.")
     email = payload.email.lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    # Only allow self-registration as 'user'; admins create privileged users
     user = User(
         email=email,
         password_hash=hash_password(payload.password),
@@ -35,7 +43,9 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
 
 @router.post("/login", response_model=UserOut)
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, payload: LoginRequest, response: Response,
+          db: Session = Depends(get_db)):
     email = payload.email.lower()
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(payload.password, user.password_hash or ""):
@@ -61,6 +71,7 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/refresh")
+@limiter.limit("10/minute")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     token = request.cookies.get("refresh_token")
     if not token:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, User
-from schemas import DealCreate, DealOut, StageUpdate
+from schemas import DealCreate, DealOut, StageUpdate, ActivityOut
 from auth import get_current_user, require_write
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -30,7 +30,6 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
     contact = db.query(Contact).filter(Contact.id == d.contact_id).first() if d.contact_id else None
     activities = db.query(Activity).filter(Activity.deal_id == deal_id) \
         .order_by(Activity.created_at.desc()).all()
-    from schemas import ActivityOut
     return {
         "deal": DealOut.model_validate(d).model_dump(),
         "company_name": company.name if company else None,
@@ -90,6 +89,8 @@ def delete_deal(deal_id: str, db: Session = Depends(get_db),
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")
+    # Null out child references before deleting
+    db.query(Activity).filter(Activity.deal_id == deal_id).update({Activity.deal_id: None})
     db.delete(d)
     db.commit()
     return {"success": True}

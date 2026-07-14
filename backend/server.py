@@ -5,22 +5,28 @@ import os
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from database import engine, Base, SessionLocal
 from models import User, Company, Contact, Deal, Project, Activity
-from auth import hash_password, verify_password
+from auth import hash_password
+from rate_limit import limiter
 from routers import (auth_router, users, companies, contacts, deals, projects,
                      activities, dashboard, ai_router, settings_router, data_io,
                      reports, notifications)
 
 app = FastAPI(title="wespeak.ai CRM")
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
     expose_headers=["X-Total-Count"],
 )
 
@@ -62,9 +68,6 @@ def seed():
             db.add(admin)
             db.commit()
             db.refresh(admin)
-        elif not verify_password(admin_password, admin.password_hash or ""):
-            admin.password_hash = hash_password(admin_password)
-            db.commit()
 
         # Demo users for each role
         demo_users = [

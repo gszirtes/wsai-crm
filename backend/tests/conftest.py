@@ -2,7 +2,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://785d7db7-5035-4ba8-9f51-6bb14185c330.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 
 
 def _login(email: str, password: str) -> requests.Session:

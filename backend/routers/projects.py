@@ -7,13 +7,9 @@ from models import Project, TimeEntry, Activity, Company, Contact, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
                      ActivityOut)
 from auth import get_current_user, require_write
+from utils import logged_hours_for
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-
-
-def logged_hours_for(db: Session, project_id: str) -> float:
-    return float(db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
-                 .filter(TimeEntry.project_id == project_id).scalar())
 
 
 def compute_health(project: Project, logged: float) -> str:
@@ -23,8 +19,12 @@ def compute_health(project: Project, logged: float) -> str:
         return "cancelled"
     if project.estimated_hours and logged > project.estimated_hours:
         return "over_budget"
-    if project.end_date and project.end_date < datetime.now(timezone.utc):
-        return "at_risk"
+    if project.end_date:
+        end = project.end_date
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end < datetime.now(timezone.utc):
+            return "at_risk"
     return "on_track"
 
 

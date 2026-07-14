@@ -9,6 +9,8 @@ from auth import get_current_user, require_write
 
 router = APIRouter(prefix="/api", tags=["data"])
 
+VALID_CONTACT_STATUSES = {"lead", "prospect", "customer", "inactive"}
+
 
 def _csv_response(rows, fieldnames, filename):
     buf = io.StringIO()
@@ -79,12 +81,24 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
     created = 0
     errors = []
     companies = {c.name.lower(): c.id for c in db.query(Company).all()}
+    existing_emails = {c.email.lower() for c in db.query(Contact).filter(Contact.email != None).all()}
+    seen_emails = set()
     for i, row in enumerate(reader, start=2):
         row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
         first = row.get("first_name") or row.get("firstname") or row.get("name")
         if not first:
             errors.append(f"Row {i}: missing first_name")
             continue
+        email = row.get("email")
+        if email:
+            email_lower = email.lower()
+            if email_lower in existing_emails or email_lower in seen_emails:
+                errors.append(f"Row {i}: duplicate email '{email}' - skipped")
+                continue
+            seen_emails.add(email_lower)
+        status = row.get("status") or "lead"
+        if status not in VALID_CONTACT_STATUSES:
+            status = "lead"
         company_id = None
         cname = row.get("company")
         if cname:
@@ -96,8 +110,8 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
                 company_id = comp.id
         c = Contact(
             first_name=first, last_name=row.get("last_name"),
-            email=row.get("email"), phone=row.get("phone"),
-            title=row.get("title"), status=row.get("status") or "lead",
+            email=email, phone=row.get("phone"),
+            title=row.get("title"), status=status,
             company_id=company_id, owner_id=user.id,
         )
         db.add(c); created += 1

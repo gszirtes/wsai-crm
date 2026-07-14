@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Contact, Company, Deal, Activity, User
-from schemas import ContactCreate, ContactOut
+from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -26,7 +26,7 @@ def list_contacts(search: str = "", status: str = "", company_id: str = "",
         q = q.filter(Contact.status == status)
     if company_id:
         q = q.filter(Contact.company_id == company_id)
-    return [_to_out(c) for c in q.order_by(Contact.created_at.desc()).all()]
+    return [_to_out(c) for c in q.options(joinedload(Contact.company)).order_by(Contact.created_at.desc()).all()]
 
 
 @router.get("/{contact_id}/detail")
@@ -39,7 +39,6 @@ def contact_detail(contact_id: str, db: Session = Depends(get_db),
         .order_by(Deal.created_at.desc()).all()
     activities = db.query(Activity).filter(Activity.contact_id == contact_id) \
         .order_by(Activity.created_at.desc()).all()
-    from schemas import DealOut, ActivityOut
     return {
         "contact": _to_out(c).model_dump(),
         "deals": [DealOut.model_validate(d).model_dump() for d in deals],
@@ -85,6 +84,9 @@ def delete_contact(contact_id: str, db: Session = Depends(get_db),
     c = db.query(Contact).filter(Contact.id == contact_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact not found")
+    # Null out child references before deleting
+    db.query(Deal).filter(Deal.contact_id == contact_id).update({Deal.contact_id: None})
+    db.query(Activity).filter(Activity.contact_id == contact_id).update({Activity.contact_id: None})
     db.delete(c)
     db.commit()
     return {"success": True}

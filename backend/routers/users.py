@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
-from schemas import UserOut, UserUpdate, RegisterRequest
+from schemas import UserOut, UserUpdate, RegisterRequest, LocaleUpdate
 from auth import get_current_user, require_role, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -69,11 +69,9 @@ def delete_user(user_id: str, db: Session = Depends(get_db),
 
 
 @router.put("/me/locale", response_model=UserOut)
-def update_my_locale(payload: dict, db: Session = Depends(get_db),
+def update_my_locale(payload: LocaleUpdate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    locale = payload.get("locale")
-    if locale in ("en", "hu"):
-        user.locale = locale
-        db.commit()
-        db.refresh(user)
+    user.locale = payload.locale
+    db.commit()
+    db.refresh(user)
     return user

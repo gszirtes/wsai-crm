@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Notification, Activity, Project, User
 from auth import get_current_user
+from utils import logged_hours_for
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -42,7 +43,7 @@ def _build_desired(db: Session, user: User) -> dict:
     for p in projects:
         if p.status in ("completed", "cancelled"):
             continue
-        over = p.estimated_hours and _logged(db, p.id) > p.estimated_hours
+        over = p.estimated_hours and logged_hours_for(db, p.id) > p.estimated_hours
         late = p.end_date and (p.end_date.replace(tzinfo=timezone.utc) if p.end_date.tzinfo is None else p.end_date) < now
         if over or late:
             desired[f"project_risk:{p.id}"] = {
@@ -52,13 +53,6 @@ def _build_desired(db: Session, user: User) -> dict:
                 "link": f"/projects/{p.id}",
             }
     return desired
-
-
-def _logged(db: Session, project_id: str) -> float:
-    from sqlalchemy import func
-    from models import TimeEntry
-    return float(db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
-                 .filter(TimeEntry.project_id == project_id).scalar())
 
 
 def _sync(db: Session, user: User):

@@ -50,6 +50,26 @@ create projects, contacts, deals, summaries). Storage: PostgreSQL.
 - ✅ **Email logging to contacts** — record inbound/outbound emails as activities on the contact timeline
 - ✅ Tested: 49/49 backend pytest pass; all frontend flows pass
 
+### Iteration 4 (2026-07-14) — Security audit & hardening
+- ✅ Registration disabled by default (ALLOW_REGISTRATION env flag)
+- ✅ Rate limiting on auth endpoints (slowapi: 5/min login, 3/min register, 10/min refresh)
+- ✅ Cookie hardening: SameSite=Lax, Secure flag configurable via COOKIE_SECURE env
+- ✅ Admin password no longer reset on restart (seed creates only on first run)
+- ✅ FK cascade rules: SET NULL on optional FKs, CASCADE on TimeEntry/Notification
+- ✅ Delete handlers clean up child records (companies, contacts, deals)
+- ✅ AI entity validation: LLM data validated against allowed enums
+- ✅ CSV import: email dedup + status validation
+- ✅ Pydantic Literal validation on all enum fields (stage, status, type)
+- ✅ Typed LocaleUpdate model (was untyped dict)
+- ✅ requirements.txt trimmed: 129 → 16 packages
+- ✅ N+1 query fixed in contacts list (joinedload)
+- ✅ Shared utils extracted (logged_hours_for)
+- ✅ Inline imports moved to module level
+- ✅ CORS tightened: explicit methods/headers
+- ✅ Frontend Dockerfile fixed: yarn → npm
+- ✅ .env.example created with all env vars documented
+- ✅ Tested: 49/49 backend pytest pass; Docker stack verified locally
+
 ## Backlog
 - P0: Google Workspace OAuth (login + Gmail + Calendar) — needs Google Cloud Client ID/Secret (user enters in Settings; scaffold ready)
 - P1: OpenRouter key entry → live AI (needs user key)

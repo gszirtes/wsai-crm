@@ -9,6 +9,12 @@ from ai_service import get_openrouter_key, get_model, run_ai_command
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
+VALID_CONTACT_STATUSES = {"lead", "prospect", "customer", "inactive"}
+VALID_DEAL_STAGES = {"lead", "qualified", "proposal", "negotiation", "won", "lost"}
+VALID_PROJECT_STATUSES = {"planning", "active", "on_hold", "completed", "cancelled"}
+VALID_PRIORITIES = {"low", "medium", "high"}
+VALID_ACTIVITY_TYPES = {"call", "email", "meeting", "task", "note"}
+
 
 def _build_context(db: Session) -> str:
     c = db.query(func.count(Contact.id)).scalar()
@@ -21,20 +27,23 @@ def _build_context(db: Session) -> str:
 def _execute(action: str, data: dict, db: Session, user: User):
     created = None
     if action == "create_contact":
+        status = data.get("status", "lead")
+        if status not in VALID_CONTACT_STATUSES:
+            status = "lead"
         obj = Contact(
             first_name=data.get("first_name") or data.get("name") or "New",
             last_name=data.get("last_name"),
             email=data.get("email"),
             phone=data.get("phone"),
             title=data.get("title"),
-            status=data.get("status", "lead"),
+            status=status,
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
         created = {"type": "contact", "id": obj.id, "name": f"{obj.first_name} {obj.last_name or ''}".strip()}
     elif action == "create_company":
         obj = Company(
-            name=data.get("name") or "New Company",
+            name=data.get("name") or data.get("title") or "New Company",
             industry=data.get("industry"),
             website=data.get("website"),
             phone=data.get("phone"),
@@ -44,28 +53,44 @@ def _execute(action: str, data: dict, db: Session, user: User):
         db.add(obj); db.commit(); db.refresh(obj)
         created = {"type": "company", "id": obj.id, "name": obj.name}
     elif action == "create_deal":
+        stage = data.get("stage", "lead")
+        if stage not in VALID_DEAL_STAGES:
+            stage = "lead"
+        try:
+            value = float(data.get("value") or 0)
+        except (TypeError, ValueError):
+            value = 0
         obj = Deal(
             title=data.get("title") or data.get("name") or "New Deal",
-            value=float(data.get("value") or 0),
+            value=value,
             currency=data.get("currency", "EUR"),
-            stage=data.get("stage", "lead"),
+            stage=stage,
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
         created = {"type": "deal", "id": obj.id, "name": obj.title}
     elif action == "create_project":
+        status = data.get("status", "planning")
+        if status not in VALID_PROJECT_STATUSES:
+            status = "planning"
+        priority = data.get("priority", "medium")
+        if priority not in VALID_PRIORITIES:
+            priority = "medium"
         obj = Project(
             name=data.get("name") or data.get("title") or "New Project",
             description=data.get("description"),
-            status=data.get("status", "planning"),
-            priority=data.get("priority", "medium"),
+            status=status,
+            priority=priority,
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
         created = {"type": "project", "id": obj.id, "name": obj.name}
     elif action == "create_activity":
+        atype = data.get("type", "task")
+        if atype not in VALID_ACTIVITY_TYPES:
+            atype = "task"
         obj = Activity(
-            type=data.get("type", "task"),
+            type=atype,
             subject=data.get("subject") or data.get("title") or "New Task",
             description=data.get("description"),
             owner_id=user.id,

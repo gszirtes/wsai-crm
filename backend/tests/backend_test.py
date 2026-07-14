@@ -5,7 +5,7 @@ import uuid
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://785d7db7-5035-4ba8-9f51-6bb14185c330.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 
 
 # ---------- Health ----------
@@ -48,16 +48,11 @@ class TestAuth:
     def test_register_new_user(self):
         email = f"test_{uuid.uuid4().hex[:8]}@wespeak.ai"
         s = requests.Session()
+        # Registration is disabled by default (ALLOW_REGISTRATION=false)
         r = s.post(f"{BASE_URL}/api/auth/register",
                    json={"email": email, "password": "secret123", "name": "Test Register"}, timeout=20)
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["email"] == email
-        assert data["role"] == "user"
-        # cleanup - login as admin and delete
-        a = requests.Session()
-        a.post(f"{BASE_URL}/api/auth/login", json={"email": "admin@wespeak.ai", "password": "admin123"}, timeout=20)
-        a.delete(f"{BASE_URL}/api/users/{data['id']}", timeout=20)
+        assert r.status_code == 403, r.text
+        assert "disabled" in r.json()["detail"].lower()
 
 
 # ---------- Contacts ----------

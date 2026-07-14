@@ -43,7 +43,7 @@ class Company(Base):
     address = Column(String, nullable=True)
     size = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
-    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -61,8 +61,8 @@ class Contact(Base):
     status = Column(String, default="lead")  # lead, prospect, customer, inactive
     tags = Column(JSONB, default=list)
     notes = Column(Text, nullable=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True)
-    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -79,9 +79,9 @@ class Deal(Base):
     probability = Column(Integer, default=10)
     expected_close = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True)
-    contact_id = Column(String, ForeignKey("contacts.id"), nullable=True)
-    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -99,9 +99,9 @@ class Project(Base):
     currency = Column(String, default="EUR")
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True)
-    contact_id = Column(String, ForeignKey("contacts.id"), nullable=True)
-    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -114,19 +114,19 @@ class Activity(Base):
     description = Column(Text, nullable=True)
     due_date = Column(DateTime(timezone=True), nullable=True)
     completed = Column(Boolean, default=False)
-    contact_id = Column(String, ForeignKey("contacts.id"), nullable=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True)
-    deal_id = Column(String, ForeignKey("deals.id"), nullable=True)
-    project_id = Column(String, ForeignKey("projects.id"), nullable=True)
-    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    deal_id = Column(String, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"
     id = Column(String, primary_key=True, default=gen_id)
-    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     hours = Column(Float, default=0)
     description = Column(String, nullable=True)
     billable = Column(Boolean, default=True)
@@ -137,7 +137,7 @@ class TimeEntry(Base):
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(String, primary_key=True, default=gen_id)
-    user_id = Column(String, ForeignKey("users.id"), index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     key = Column(String, index=True)
     type = Column(String, default="info")  # auto_overdue, auto_due_today, auto_project_risk, info
     title = Column(String, nullable=False)
@@ -156,7 +156,7 @@ class AppSetting(Base):
 class AICommandLog(Base):
     __tablename__ = "ai_command_logs"
     id = Column(String, primary_key=True, default=gen_id)
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     command = Column(Text, nullable=False)
     action = Column(String, nullable=True)
     response = Column(Text, nullable=True)

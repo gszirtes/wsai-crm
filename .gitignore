@@ -217,8 +217,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .env.*
+!.env.example
 *.env
 credentials.json
 *.pem
 *.key
 .credentials
+
+# AI tool state (local only)
+.megamemory/
+.omo/
+.serena/

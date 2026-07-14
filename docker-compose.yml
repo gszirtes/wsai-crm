@@ -13,8 +13,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "127.0.0.1:5432:5432"
+
 
   backend:
     build: ./backend
@@ -28,21 +27,24 @@ services:
       FERNET_KEY: ${FERNET_KEY}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wespeak.ai}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3010}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-deepseek/deepseek-chat-v3-0324:free}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      RATE_LIMITING_ENABLED: ${RATE_LIMITING_ENABLED:-true}
     ports:
-      - "127.0.0.1:8001:8001"
+      - "127.0.0.1:8010:8001"
 
   frontend:
     build:
       context: ./frontend
       args:
-        REACT_APP_BACKEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+        REACT_APP_BACKEND_URL: ${FRONTEND_URL:-http://localhost:3010}
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "3010:80"
 
 volumes:
   pgdata:

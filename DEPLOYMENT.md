@@ -23,6 +23,11 @@ python3 -c "from cryptography.fernet import Fernet; print('FERNET_KEY='+Fernet.g
 Set `FRONTEND_URL` to your public HTTPS URL (needed for CORS + secure cookies) and set a strong
 `POSTGRES_PASSWORD` and `ADMIN_PASSWORD`.
 
+Additional env vars (see `.env.example` for details):
+- `COOKIE_SECURE=true` — required for HTTPS (cookies won't work over HTTP otherwise)
+- `ALLOW_REGISTRATION=false` — keeps self-registration off (default)
+- `RATE_LIMITING_ENABLED=true` — keeps brute-force protection on (default)
+
 ## 3. Launch
 ```bash
 docker compose up -d --build

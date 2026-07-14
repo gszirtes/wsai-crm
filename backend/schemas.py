@@ -1,6 +1,12 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, EmailStr, Field
+
+# Allowed enum values
+DealStage = Literal["lead", "qualified", "proposal", "negotiation", "won", "lost"]
+ContactStatus = Literal["lead", "prospect", "customer", "inactive"]
+ProjectStatus = Literal["planning", "active", "on_hold", "completed", "cancelled"]
+ActivityType = Literal["call", "email", "meeting", "task", "note"]
 
 
 # ---------- Auth ----------
@@ -72,7 +78,7 @@ class ContactBase(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     title: Optional[str] = None
-    status: Optional[str] = "lead"
+    status: Optional[ContactStatus] = "lead"
     tags: Optional[List[str]] = []
     notes: Optional[str] = None
     company_id: Optional[str] = None
@@ -97,7 +103,7 @@ class DealBase(BaseModel):
     title: str
     value: Optional[float] = 0
     currency: Optional[str] = "EUR"
-    stage: Optional[str] = "lead"
+    stage: Optional[DealStage] = "lead"
     probability: Optional[int] = 10
     expected_close: Optional[datetime] = None
     notes: Optional[str] = None
@@ -119,14 +125,14 @@ class DealOut(DealBase):
 
 
 class StageUpdate(BaseModel):
-    stage: str
+    stage: DealStage
 
 
 # ---------- Project ----------
 class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
-    status: Optional[str] = "planning"
+    status: Optional[ProjectStatus] = "planning"
     priority: Optional[str] = "medium"
     budget: Optional[float] = 0
     estimated_hours: Optional[float] = 0
@@ -177,7 +183,7 @@ class TimeEntryOut(BaseModel):
 
 # ---------- Activity ----------
 class ActivityBase(BaseModel):
-    type: Optional[str] = "task"
+    type: Optional[ActivityType] = "task"
     subject: str
     description: Optional[str] = None
     due_date: Optional[datetime] = None
@@ -209,3 +215,7 @@ class AICommandRequest(BaseModel):
 class SettingUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     openrouter_model: Optional[str] = None
+
+
+class LocaleUpdate(BaseModel):
+    locale: Literal["en", "hu"]

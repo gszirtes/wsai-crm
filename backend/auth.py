@@ -45,11 +45,14 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
+
+
 def set_auth_cookies(response, access_token: str, refresh_token: str):
     response.set_cookie(key="access_token", value=access_token, httponly=True,
-                        secure=True, samesite="none", max_age=43200, path="/")
+                        secure=COOKIE_SECURE, samesite="lax", max_age=43200, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True,
-                        secure=True, samesite="none", max_age=604800, path="/")
+                        secure=COOKIE_SECURE, samesite="lax", max_age=604800, path="/")
 
 
 def _extract_token(request: Request):
