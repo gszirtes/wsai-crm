@@ -43,6 +43,7 @@ export default function ProjectDetail() {
     setModal(false); setForm({ hours: "", description: "", billable: true }); load();
   };
   const delTime = async (eid) => {
+    if (!window.confirm(t("common.confirmDelete"))) return;
     await api.delete(`/projects/${id}/time/${eid}`); load();
   };
 

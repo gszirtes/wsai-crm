@@ -34,14 +34,23 @@ create projects, contacts, deals, summaries). Storage: PostgreSQL.
 - ✅ i18n EN/HU, dark/light theme, mobile-first responsive nav
 - ✅ Seed data (companies, contacts, deals, projects, activities)
 
+### Iteration 2 (2026-07-14) — P1 + P2 + Time tracking
+- ✅ Entity detail pages: Contact, Company, Deal, Project — with related records + activity timelines
+- ✅ Per-project time/effort tracking (TimeEntry): log hours, billable flag, billable amount (hourly_rate), logged vs estimated
+- ✅ Engagement-health indicator on projects (on_track / at_risk / over_budget / completed / cancelled)
+- ✅ Calendar month view for activities (prev/next, per-day tasks)
+- ✅ CSV export (contacts/companies/deals/projects) + CSV import (contacts, auto-creates companies)
+- ✅ Clickable list rows/cards → detail navigation
+- ✅ Deployment: docker-compose, backend+frontend Dockerfiles, nginx SPA+API proxy, pg_dump backup/restore scripts, DEPLOYMENT.md (Hetzner guide), .env.example
+- ✅ Tested: 35/35 backend pytest pass; all frontend flows pass
+
 ## Backlog
-- P0: Google Workspace OAuth (login + Gmail + Calendar) — needs Google Cloud credentials
-- P1: Contact/Deal/Project detail pages with linked activities timeline
-- P1: Calendar view for activities
-- P2: CSV import/export, email logging to contacts, notifications
-- P2: Backup script + Hetzner deployment guide (docker-compose)
+- P0: Google Workspace OAuth (login + Gmail + Calendar) — needs Google Cloud Client ID/Secret (user enters in Settings; scaffold ready)
+- P1: OpenRouter key entry → live AI (needs user key)
+- P2: TimeEntry ownership checks on delete; import result toast; project list pagination/eager hours aggregate
+- P2: notifications, email logging to contacts
 
 ## Next Tasks
-1. Collect OpenRouter API key from user → enable AI live
-2. Collect Google Cloud OAuth creds → implement Workspace integration
-3. Build entity detail pages + activity timelines
+1. User provides OpenRouter key (in Settings) → AI live
+2. User provides Google Cloud OAuth creds → implement Workspace integration
+3. Optional: TS migration (robustness only, not security)
