@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
@@ -37,12 +37,28 @@ def to_out(db: Session, p: Project) -> ProjectOut:
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(status: str = "", db: Session = Depends(get_db),
-                  _: User = Depends(get_current_user)):
+def list_projects(response: Response, status: str = "", limit: int = 20, offset: int = 0,
+                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     q = db.query(Project)
     if status:
         q = q.filter(Project.status == status)
-    return [to_out(db, p) for p in q.order_by(Project.created_at.desc()).all()]
+    total = q.count()
+    limit = max(1, min(limit, 100))
+    projects = q.order_by(Project.created_at.desc()).offset(max(0, offset)).limit(limit).all()
+    ids = [p.id for p in projects]
+    hours = {}
+    if ids:
+        rows = db.query(TimeEntry.project_id, func.coalesce(func.sum(TimeEntry.hours), 0)) \
+            .filter(TimeEntry.project_id.in_(ids)).group_by(TimeEntry.project_id).all()
+        hours = {pid: float(h) for pid, h in rows}
+    out = []
+    for p in projects:
+        o = ProjectOut.model_validate(p)
+        o.logged_hours = hours.get(p.id, 0.0)
+        o.health = compute_health(p, o.logged_hours)
+        out.append(o)
+    response.headers["X-Total-Count"] = str(total)
+    return out
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -166,6 +182,8 @@ def delete_time(project_id: str, entry_id: str, db: Session = Depends(get_db),
                                    TimeEntry.project_id == project_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Time entry not found")
+    if e.user_id != user.id and user.role not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="You can only delete your own time entries")
     db.delete(e)
     db.commit()
     return {"success": True}

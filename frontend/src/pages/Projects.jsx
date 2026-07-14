@@ -4,10 +4,11 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, FolderKanban, Clock } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
-import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea } from "../components/common";
+import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea, Pagination } from "../components/common";
 
 const STATUSES = ["planning", "active", "on_hold", "completed", "cancelled"];
 const PRIORITIES = ["low", "medium", "high"];
+const PAGE_SIZE = 12;
 const empty = { name: "", description: "", status: "planning", priority: "medium", budget: 0, estimated_hours: 0, hourly_rate: 0, currency: "EUR", company_id: "" };
 
 export default function Projects() {
@@ -21,9 +22,15 @@ export default function Projects() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const load = useCallback(() => { api.get("/projects", { params: { status } }).then((r) => setItems(r.data)); }, [status]);
+  const load = useCallback(() => {
+    api.get("/projects", { params: { status, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE } })
+      .then((r) => { setItems(r.data); setTotal(parseInt(r.headers["x-total-count"] || "0", 10)); });
+  }, [status, page]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [status]);
   useEffect(() => { api.get("/companies").then((r) => setCompanies(r.data)); }, []);
 
   const openNew = () => { setForm(empty); setEditing(null); setModal(true); };
@@ -83,6 +90,10 @@ export default function Projects() {
             </div>
           ))}
         </div>
+      )}
+
+      {items && items.length > 0 && (
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
       )}
 
       <Modal open={modal} onClose={() => setModal(false)} title={editing ? t("project.editProject") : t("project.newProject")}

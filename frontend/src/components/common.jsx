@@ -144,3 +144,54 @@ export function Spinner() {
     </div>
   );
 }
+
+export function Toast({ toast, onClose }) {
+  if (!toast) return null;
+  const colors = {
+    success: "border-success/40 text-success",
+    error: "border-danger/40 text-danger",
+    info: "border-border text-txt",
+  };
+  return (
+    <div
+      data-testid="toast"
+      className={`fixed bottom-24 lg:bottom-6 right-4 z-[60] max-w-xs bg-bg border ${colors[toast.type] || colors.info} rounded-sm shadow-2xl px-4 py-3 text-sm animate-fade-up flex items-start gap-3`}
+    >
+      <span className="flex-1">{toast.message}</span>
+      <button onClick={onClose} className="text-muted hover:text-txt transition-colors shrink-0">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+export function Pagination({ page, pageSize, total, onPage }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  return (
+    <div className="flex items-center justify-between text-sm" data-testid="pagination">
+      <span className="text-muted">
+        {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} / {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          data-testid="page-prev"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          className="px-3 py-1.5 rounded-sm border border-border disabled:opacity-40 hover:bg-surface transition-colors"
+        >
+          ‹
+        </button>
+        <span className="text-muted">{page} / {pages}</span>
+        <button
+          data-testid="page-next"
+          disabled={page >= pages}
+          onClick={() => onPage(page + 1)}
+          className="px-3 py-1.5 rounded-sm border border-border disabled:opacity-40 hover:bg-surface transition-colors"
+        >
+          ›
+        </button>
+      </div>
+    </div>
+  );
+}

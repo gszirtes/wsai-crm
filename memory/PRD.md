@@ -47,7 +47,7 @@ create projects, contacts, deals, summaries). Storage: PostgreSQL.
 ## Backlog
 - P0: Google Workspace OAuth (login + Gmail + Calendar) — needs Google Cloud Client ID/Secret (user enters in Settings; scaffold ready)
 - P1: OpenRouter key entry → live AI (needs user key)
-- P2: TimeEntry ownership checks on delete; import result toast; project list pagination/eager hours aggregate
+- P2: TimeEntry ownership checks on delete ✅ (owner or admin/manager only); import result toast ✅; projects pagination ✅ (X-Total-Count header + batched hours, no N+1)
 - P2: notifications, email logging to contacts
 
 ## Next Tasks

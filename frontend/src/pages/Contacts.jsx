@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search, Pencil, Trash2, Mail, Phone, Download, Upload } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
-import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea } from "../components/common";
+import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea, Toast } from "../components/common";
 
 const STATUSES = ["lead", "prospect", "customer", "inactive"];
 const empty = { first_name: "", last_name: "", email: "", phone: "", title: "", status: "lead", company_id: "", notes: "" };
@@ -22,6 +22,7 @@ export default function Contacts() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const load = useCallback(() => {
     api.get("/contacts", { params: { search, status } }).then((r) => setItems(r.data));
@@ -60,7 +61,12 @@ export default function Contacts() {
     const fd = new FormData();
     fd.append("file", file);
     const r = await api.post("/import/contacts", fd, { headers: { "Content-Type": "multipart/form-data" } });
-    alert(`${r.data.created} ${t("io.importDone")}${r.data.errors.length ? ` · ${r.data.errors.length} ${t("io.errors")}` : ""}`);
+    const errs = r.data.errors?.length || 0;
+    setToast({
+      message: `${r.data.created} ${t("io.importDone")}${errs ? ` · ${errs} ${t("io.errors")}` : ""}`,
+      type: errs ? "info" : "success",
+    });
+    setTimeout(() => setToast(null), 4000);
     e.target.value = "";
     load();
   };
@@ -150,6 +156,8 @@ export default function Contacts() {
         </div>
         <Field label={t("contact.notes")}><Textarea rows={3} value={form.notes || ""} onChange={set("notes")} /></Field>
       </Modal>
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }
