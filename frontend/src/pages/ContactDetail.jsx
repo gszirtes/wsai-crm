@@ -22,10 +22,10 @@ export default function ContactDetail() {
   useEffect(() => { load(); }, [load]);
 
   const logEmail = async () => {
-    const prefix = email.direction === "inbound" ? t("email.inbound") : t("email.outbound");
     await api.post("/activities", {
       type: "email",
-      subject: `[${prefix}] ${email.subject}`,
+      direction: email.direction,
+      subject: email.subject,
       description: email.body,
       contact_id: id,
     });
@@ -95,7 +95,7 @@ export default function ContactDetail() {
                 <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />
                 <div>
                   <div className="text-sm">{a.subject}</div>
-                  <div className="text-xs text-muted">{t(`statuses.${a.type}`)}{a.completed ? " · ✓" : ""}</div>
+                  <div className="text-xs text-muted">{t(`statuses.${a.type}`)}{a.direction ? ` · ${t(`activity.direction.${a.direction}`)}` : ""}{a.completed ? " · ✓" : ""}</div>
                 </div>
               </div>
             ))}

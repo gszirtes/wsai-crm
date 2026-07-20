@@ -7,6 +7,7 @@ DealStage = Literal["lead", "qualified", "proposal", "negotiation", "won", "lost
 ContactStatus = Literal["lead", "prospect", "customer", "inactive"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed", "cancelled"]
 ActivityType = Literal["call", "email", "meeting", "task", "note"]
+ActivityDirection = Literal["inbound", "outbound", "internal"]
 
 
 # ---------- Auth ----------
@@ -184,6 +185,7 @@ class TimeEntryOut(BaseModel):
 # ---------- Activity ----------
 class ActivityBase(BaseModel):
     type: Optional[ActivityType] = "task"
+    direction: Optional[ActivityDirection] = None
     subject: str
     description: Optional[str] = None
     due_date: Optional[datetime] = None

@@ -110,6 +110,7 @@ class Activity(Base):
     __tablename__ = "activities"
     id = Column(String, primary_key=True, default=gen_id)
     type = Column(String, default="task")  # call, email, meeting, task, note
+    direction = Column(String, nullable=True)  # inbound, outbound, internal, or NULL
     subject = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     due_date = Column(DateTime(timezone=True), nullable=True)

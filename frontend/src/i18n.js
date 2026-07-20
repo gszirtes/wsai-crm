@@ -125,12 +125,16 @@ const en = {
     activity: {
       title: "Activities",
       type: "Type",
+      directionLabel: "Direction",
+      direction: { inbound: "Inbound", outbound: "Outbound", internal: "Internal" },
       subject: "Subject",
       description: "Description",
       dueDate: "Due date",
       completed: "Completed",
       newActivity: "New activity",
       editActivity: "Edit activity",
+      logActivity: "Log activity",
+      noDirection: "—",
     },
     users: {
       title: "Users & Roles",
@@ -338,12 +342,16 @@ const hu = {
     activity: {
       title: "Tevékenységek",
       type: "Típus",
+      directionLabel: "Irány",
+      direction: { inbound: "Bejövő", outbound: "Kimenő", internal: "Belső" },
       subject: "Tárgy",
       description: "Leírás",
       dueDate: "Határidő",
       completed: "Kész",
       newActivity: "Új tevékenység",
       editActivity: "Tevékenység szerkesztése",
+      logActivity: "Tevékenység rögzítése",
+      noDirection: "—",
     },
     users: {
       title: "Felhasználók és szerepek",
