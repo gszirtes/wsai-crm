@@ -14,7 +14,7 @@ from auth import hash_password
 from rate_limit import limiter
 from routers import (auth_router, users, companies, contacts, deals, projects,
                      activities, dashboard, ai_router, settings_router, data_io,
-                     reports, notifications)
+                     reports, notifications, event_logs)
 
 app = FastAPI(title="wespeak.ai CRM")
 
@@ -43,6 +43,7 @@ app.include_router(settings_router.router)
 app.include_router(data_io.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
+app.include_router(event_logs.router)
 
 
 @app.get("/api/health")

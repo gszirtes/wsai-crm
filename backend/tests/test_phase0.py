@@ -74,3 +74,87 @@ class TestActivityDirection:
             "type": "task", "subject": "TEST_p0 bad direction", "direction": "sideways",
         })
         assert r.status_code == 422
+
+
+class TestEventLog:
+    def _events(self, client, base_url, entity_type, entity_id):
+        r = client.get(f"{base_url}/api/event-logs",
+                       params={"entity_type": entity_type, "entity_id": entity_id})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_create_deal_logs_created_event(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p0 event deal"})
+        assert cr.status_code == 200, cr.text
+        deal_id = cr.json()["id"]
+        try:
+            events = self._events(admin_client, base_url, "deal", deal_id)
+            created = [e for e in events if e["event_type"] == "created"]
+            assert len(created) == 1
+            assert created[0]["actor_type"] == "user"
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_stage_change_logs_stage_changed_event(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p0 stage deal"})
+        deal_id = cr.json()["id"]
+        try:
+            pr = admin_client.patch(f"{base_url}/api/deals/{deal_id}/stage", json={"stage": "qualified"})
+            assert pr.status_code == 200, pr.text
+            events = self._events(admin_client, base_url, "deal", deal_id)
+            stage_events = [e for e in events if e["event_type"] == "stage_changed"]
+            assert len(stage_events) == 1
+            assert stage_events[0]["from_value"] == "lead"
+            assert stage_events[0]["to_value"] == "qualified"
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_same_stage_patch_does_not_log_duplicate_event(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p0 nochange deal"})
+        deal_id = cr.json()["id"]
+        try:
+            admin_client.patch(f"{base_url}/api/deals/{deal_id}/stage", json={"stage": "lead"})
+            events = self._events(admin_client, base_url, "deal", deal_id)
+            assert not [e for e in events if e["event_type"] == "stage_changed"]
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_activity_on_deal_logs_activity_logged_event(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p0 activity deal"})
+        deal_id = cr.json()["id"]
+        try:
+            ar = admin_client.post(f"{base_url}/api/activities", json={
+                "type": "call", "subject": "TEST_p0 logged call", "deal_id": deal_id,
+            })
+            assert ar.status_code == 200, ar.text
+            activity_id = ar.json()["id"]
+            try:
+                events = self._events(admin_client, base_url, "deal", deal_id)
+                logged = [e for e in events if e["event_type"] == "activity_logged"]
+                assert len(logged) == 1
+                assert logged[0]["activity_id"] == activity_id
+            finally:
+                admin_client.delete(f"{base_url}/api/activities/{activity_id}")
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_activity_toggle_logs_status_changed_event(self, admin_client, base_url):
+        ar = admin_client.post(f"{base_url}/api/activities", json={
+            "type": "task", "subject": "TEST_p0 toggle me",
+        })
+        activity_id = ar.json()["id"]
+        try:
+            tr = admin_client.patch(f"{base_url}/api/activities/{activity_id}/toggle")
+            assert tr.status_code == 200, tr.text
+            events = self._events(admin_client, base_url, "activity", activity_id)
+            status_events = [e for e in events if e["event_type"] == "status_changed"]
+            assert len(status_events) == 1
+            assert status_events[0]["from_value"] == "False"
+            assert status_events[0]["to_value"] == "True"
+        finally:
+            admin_client.delete(f"{base_url}/api/activities/{activity_id}")
+
+    def test_user_forbidden_from_event_logs(self, user_client, base_url):
+        r = user_client.get(f"{base_url}/api/event-logs",
+                            params={"entity_type": "deal", "entity_id": "anything"})
+        assert r.status_code == 403

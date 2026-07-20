@@ -6,6 +6,7 @@ from models import (Contact, Company, Deal, Project, Activity, User, AICommandLo
 from schemas import AICommandRequest
 from auth import get_current_user, require_write
 from ai_service import get_openrouter_key, get_model, run_ai_command
+from utils import log_event
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -40,6 +41,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
+        log_event(db, "contact", obj.id, "created", user); db.commit()
         created = {"type": "contact", "id": obj.id, "name": f"{obj.first_name} {obj.last_name or ''}".strip()}
     elif action == "create_company":
         obj = Company(
@@ -51,6 +53,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
+        log_event(db, "company", obj.id, "created", user); db.commit()
         created = {"type": "company", "id": obj.id, "name": obj.name}
     elif action == "create_deal":
         stage = data.get("stage", "lead")
@@ -68,6 +71,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
+        log_event(db, "deal", obj.id, "created", user); db.commit()
         created = {"type": "deal", "id": obj.id, "name": obj.title}
     elif action == "create_project":
         status = data.get("status", "planning")
@@ -84,6 +88,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
+        log_event(db, "project", obj.id, "created", user); db.commit()
         created = {"type": "project", "id": obj.id, "name": obj.name}
     elif action == "create_activity":
         atype = data.get("type", "task")
@@ -96,6 +101,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             owner_id=user.id,
         )
         db.add(obj); db.commit(); db.refresh(obj)
+        log_event(db, "activity", obj.id, "created", user); db.commit()
         created = {"type": "activity", "id": obj.id, "name": obj.subject}
     return created
 

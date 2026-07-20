@@ -7,7 +7,7 @@ from models import Project, TimeEntry, Activity, Company, Contact, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
                      ActivityOut)
 from auth import get_current_user, require_write
-from utils import logged_hours_for
+from utils import logged_hours_for, log_event
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -109,6 +109,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     p = Project(**payload.model_dump(), owner_id=user.id)
     db.add(p)
+    db.flush()
+    log_event(db, "project", p.id, "created", user)
     db.commit()
     db.refresh(p)
     return to_out(db, p)
@@ -120,8 +122,11 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
+    old_status = p.status
     for k, v in payload.model_dump().items():
         setattr(p, k, v)
+    if p.status != old_status:
+        log_event(db, "project", p.id, "status_changed", user, from_value=old_status, to_value=p.status)
     db.commit()
     db.refresh(p)
     return to_out(db, p)

@@ -4,6 +4,7 @@ from database import get_db
 from models import Contact, Company, Deal, Activity, User
 from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
+from utils import log_event
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -60,6 +61,8 @@ def create_contact(payload: ContactCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = Contact(**payload.model_dump(), owner_id=user.id)
     db.add(c)
+    db.flush()
+    log_event(db, "contact", c.id, "created", user)
     db.commit()
     db.refresh(c)
     return _to_out(c)
@@ -71,8 +74,11 @@ def update_contact(contact_id: str, payload: ContactCreate, db: Session = Depend
     c = db.query(Contact).filter(Contact.id == contact_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact not found")
+    old_status = c.status
     for k, v in payload.model_dump().items():
         setattr(c, k, v)
+    if c.status != old_status:
+        log_event(db, "contact", c.id, "status_changed", user, from_value=old_status, to_value=c.status)
     db.commit()
     db.refresh(c)
     return _to_out(c)

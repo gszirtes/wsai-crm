@@ -4,6 +4,7 @@ from database import get_db
 from models import Deal, Company, Contact, Activity, User
 from schemas import DealCreate, DealOut, StageUpdate, ActivityOut
 from auth import get_current_user, require_write
+from utils import log_event
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -52,6 +53,8 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     d = Deal(**payload.model_dump(), owner_id=user.id)
     db.add(d)
+    db.flush()
+    log_event(db, "deal", d.id, "created", user)
     db.commit()
     db.refresh(d)
     return d
@@ -63,8 +66,11 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")
+    old_stage = d.stage
     for k, v in payload.model_dump().items():
         setattr(d, k, v)
+    if d.stage != old_stage:
+        log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
     db.commit()
     db.refresh(d)
     return d
@@ -76,8 +82,11 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")
+    old_stage = d.stage
     d.stage = payload.stage
     d.probability = STAGE_PROBABILITY.get(payload.stage, d.probability)
+    if d.stage != old_stage:
+        log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
     db.commit()
     db.refresh(d)
     return d

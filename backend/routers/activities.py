@@ -4,8 +4,21 @@ from database import get_db
 from models import Activity, User
 from schemas import ActivityCreate, ActivityOut
 from auth import get_current_user, require_write
+from utils import log_event
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
+
+_PARENT_LINKS = (("contact", "contact_id"), ("company", "company_id"),
+                 ("deal", "deal_id"), ("project", "project_id"))
+
+
+def _log_activity_created(db: Session, a: Activity, user):
+    log_event(db, "activity", a.id, "created", user)
+    for entity_type, field in _PARENT_LINKS:
+        parent_id = getattr(a, field)
+        if parent_id:
+            log_event(db, entity_type, parent_id, "activity_logged", user,
+                      activity_id=a.id, note=a.subject)
 
 
 @router.get("", response_model=list[ActivityOut])
@@ -30,6 +43,8 @@ def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = Activity(**payload.model_dump(), owner_id=user.id)
     db.add(a)
+    db.flush()
+    _log_activity_created(db, a, user)
     db.commit()
     db.refresh(a)
     return a
@@ -54,7 +69,10 @@ def toggle_activity(activity_id: str, db: Session = Depends(get_db),
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    old_completed = a.completed
     a.completed = not a.completed
+    log_event(db, "activity", a.id, "status_changed", user,
+              from_value=str(old_completed), to_value=str(a.completed))
     db.commit()
     db.refresh(a)
     return a

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer
+    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer, Index
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -146,6 +146,35 @@ class Notification(Base):
     link = Column(String, nullable=True)
     read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class EventLog(Base):
+    """Generic, append-only audit trail — never updated or deleted in place.
+
+    entity_id has no DB foreign key on purpose: entity_type varies row to row
+    (deal, project, activity, ...), so a single column can't point at a single
+    table. Integrity (that entity_id actually refers to a row of entity_type)
+    is the writer's responsibility (always go through log_event()), not the
+    DB's. Rows outlive their entity: a hard-deleted parent leaves its history
+    in place for audit purposes.
+    """
+    __tablename__ = "event_logs"
+    id = Column(String, primary_key=True, default=gen_id)
+    entity_type = Column(String, nullable=False, index=True)  # deal, project, activity, milestone, ...
+    entity_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)  # created, claimed, stage_changed, status_changed,
+                                                  # activity_logged, owner_changed, visibility_changed
+    from_value = Column(String, nullable=True)
+    to_value = Column(String, nullable=True)
+    actor_type = Column(String, nullable=False)  # user, service
+    actor_id = Column(String, nullable=True)
+    activity_id = Column(String, ForeignKey("activities.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_event_logs_entity_type_entity_id_created_at", "entity_type", "entity_id", "created_at"),
+    )
 
 
 class AppSetting(Base):

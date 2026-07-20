@@ -4,6 +4,7 @@ from database import get_db
 from models import Company, Contact, Deal, Project, Activity, User
 from schemas import CompanyCreate, CompanyOut, ContactOut, DealOut, ProjectOut
 from auth import get_current_user, require_write
+from utils import log_event
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -48,6 +49,8 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = Company(**payload.model_dump(), owner_id=user.id)
     db.add(c)
+    db.flush()
+    log_event(db, "company", c.id, "created", user)
     db.commit()
     db.refresh(c)
     return c

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Contact, Company, Deal, Project, User
 from auth import get_current_user, require_write
+from utils import log_event
 
 router = APIRouter(prefix="/api", tags=["data"])
 
@@ -106,6 +107,7 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
             if not company_id:
                 comp = Company(name=cname, owner_id=user.id)
                 db.add(comp); db.commit(); db.refresh(comp)
+                log_event(db, "company", comp.id, "created", user); db.commit()
                 companies[cname.lower()] = comp.id
                 company_id = comp.id
         c = Contact(
@@ -114,6 +116,8 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
             title=row.get("title"), status=status,
             company_id=company_id, owner_id=user.id,
         )
-        db.add(c); created += 1
+        db.add(c); db.flush()
+        log_event(db, "contact", c.id, "created", user)
+        created += 1
     db.commit()
     return {"created": created, "errors": errors}
