@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from database import engine, Base, SessionLocal
+from database import SessionLocal
 from models import User, Company, Contact, Deal, Project, Activity
 from auth import hash_password
 from rate_limit import limiter
@@ -51,12 +51,9 @@ def health():
 
 
 def seed():
-    Base.metadata.create_all(bind=engine)
-    # lightweight column migrations for existing installs
-    from sqlalchemy import text
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS estimated_hours DOUBLE PRECISION DEFAULT 0"))
-        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS hourly_rate DOUBLE PRECISION DEFAULT 0"))
+    # Schema is owned by Alembic (see backend/alembic/) — `alembic upgrade head`
+    # runs before the app starts (Docker entrypoint / pytest fixtures), so by
+    # the time seed() runs here the tables already exist at the right shape.
     db = SessionLocal()
     try:
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@wespeak.ai")
@@ -136,6 +133,7 @@ def seed():
         db.close()
 
 
-@app.on_event("startup")
-def on_startup():
-    seed()
+# seed() is invoked as a one-time bootstrap step (Docker entrypoint.sh, or
+# manually via `python -c "from server import seed; seed()"` for local dev),
+# not as a FastAPI startup hook: with multiple uvicorn workers, each worker
+# would otherwise race the others through the same insert-if-missing checks.

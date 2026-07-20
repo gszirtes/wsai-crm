@@ -14,6 +14,8 @@ pip install -r requirements.txt
 export DATABASE_URL="postgresql+psycopg2://crm_user:change_me@localhost:5432/wespeak_crm"
 export JWT_SECRET="dev-secret"
 export FERNET_KEY="$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+alembic upgrade head   # schema is Alembic-owned — the app no longer creates its own tables
+python -c "from server import seed; seed()"   # one-time bootstrap: admin/demo users + sample data
 uvicorn server:app --reload --port 8001
 ```
 
@@ -32,7 +34,7 @@ pytest -v                            # all 49 tests (backend_test.py, test_itera
 pytest tests/test_iteration3.py -v   # single suite
 pytest tests/test_iteration3.py::TestNotifications -v   # single class
 ```
-Tests log in as the seeded demo accounts (`admin@wespeak.ai` / `admin123`, etc. — see `backend/tests/conftest.py`), so a fresh/seeded DB is required.
+Tests log in as the seeded demo accounts (`admin@wespeak.ai` / `admin123`, etc. — see `backend/tests/conftest.py`), so a fresh/seeded DB is required. A session-scoped autouse fixture in `conftest.py` runs `alembic upgrade head` before any test (requires `DATABASE_URL` to be set in the test-running shell, pointing at the same DB the server under test uses).
 
 There is no frontend test suite in active use (`npm test` runs CRA's default Jest runner but no test files exist beyond CRA's scaffold).
 
@@ -52,7 +54,9 @@ docker compose up -d --build
 
 **Data model** (`backend/models.py`): 10 tables, string UUID PKs (`gen_id()`). Core entities — `Company`, `Contact`, `Deal`, `Project`, `Activity` — all carry an `owner_id` (nullable FK to `User`, `SET NULL` on delete) and most enum-like fields (`status`, `stage`, `type`, `priority`) are plain strings validated only at the Pydantic layer (`schemas.py` uses `Literal[...]`) — the DB itself does not enforce the enum. `TimeEntry` belongs to a `Project` (CASCADE) and feeds billing via `Project.hourly_rate`; `backend/utils.py::logged_hours_for()` is the shared aggregation used wherever "hours logged" needs to be computed — reuse it instead of re-summing `TimeEntry`.
 
-**Startup seeding** (`server.py::seed()`): runs on every app startup. Creates tables via `Base.metadata.create_all`, applies a couple of ad-hoc `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migrations inline (there is no Alembic — schema changes to existing columns need a new idempotent `ALTER` statement added here), and seeds the admin account + 3 demo users + sample CRM data **only if they don't already exist** (admin password is not reset on restart). *(This whole paragraph describes the pre-migration state; Phase 0 of the CRM v2 migration below replaces `create_all`/ad-hoc `ALTER` with Alembic.)*
+**Schema migrations**: Alembic-owned (`backend/alembic/`, config in `backend/alembic.ini` + `backend/alembic/env.py`). `env.py` reads `DATABASE_URL` from the environment (same var `database.py` uses) and targets `Base.metadata` from `models.py` — one env var drives both the app and its migrations. There is a single baseline revision covering the schema as of the CRM v2 migration's start; new schema changes get their own revision (`alembic revision --autogenerate -m "..."`) rather than hand-edited `ALTER TABLE` statements.
+
+**Bootstrap sequence** (migrate → seed → serve): `alembic upgrade head` then `seed()` (`server.py`) run once, in that order, **before** uvicorn starts — in Docker via `backend/entrypoint.sh`, for local dev as two explicit commands (see Commands above), and in the test suite the migration step runs via an autouse session fixture in `backend/tests/conftest.py`. Neither step is a FastAPI startup hook: with `--workers 2`, a startup-event hook would run once per worker process and race itself (this is exactly what happened when `seed()` used to be wired to `@app.on_event("startup")` — two workers double-inserted the admin user). `seed()` itself seeds the admin account + 3 demo users + sample CRM data **only if they don't already exist** (admin password is not reset on restart) and is safe to call from a script (`python -c "from server import seed; seed()"`) since it does its own session-scoped DB work, not app startup.
 
 **Frontend**: CRA (JS/JSX, not TS). `App.js` defines all routes wrapped in a `Protected` component that checks `useAuth()` and an optional `roles`/`adminOnly` prop — this is the only route-level RBAC; page components assume they're already authorized. `api.js` is a single shared axios instance (`withCredentials: true`, baseURL from `REACT_APP_BACKEND_URL`) — always import it rather than creating new axios instances, and use its `formatApiError()` for surfacing backend error details. `NotificationContext` (`src/context/`) polls once and feeds both the sidebar and mobile bell so they stay in sync — don't add a second poller. Pages are flat, one file per entity (list + kanban where relevant) plus `*Detail.jsx` for entity detail views; there's no shared CRUD abstraction across pages, so follow the pattern of the most similar existing page (e.g. `Contacts.jsx`/`ContactDetail.jsx`) rather than inventing a new structure.
 
