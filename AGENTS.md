@@ -53,11 +53,67 @@ There is no frontend test suite in active use (`npm test` runs CRA's default Jes
 
 **Data model** (`backend/models.py`): 10 tables, string UUID PKs (`gen_id()`). Core entities — `Company`, `Contact`, `Deal`, `Project`, `Activity` — all carry an `owner_id` (nullable FK to `User`, `SET NULL` on delete) and most enum-like fields (`status`, `stage`, `type`, `priority`) are plain strings validated only at the Pydantic layer (`schemas.py` uses `Literal[...]`) — the DB itself does not enforce the enum. `TimeEntry` belongs to a `Project` (CASCADE) and feeds billing via `Project.hourly_rate`; `backend/utils.py::logged_hours_for()` is the shared aggregation used wherever "hours logged" needs to be computed — reuse it instead of re-summing `TimeEntry`.
 
-**Startup seeding** (`server.py::seed()`): runs on every app startup. Creates tables via `Base.metadata.create_all`, applies a couple of ad-hoc `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migrations inline (there is no Alembic — schema changes to existing columns need a new idempotent `ALTER` statement added here), and seeds the admin account + 3 demo users + sample CRM data **only if they don't already exist** (admin password is not reset on restart).
+**Startup seeding** (`server.py::seed()`): runs on every app startup. Creates tables via `Base.metadata.create_all`, applies a couple of ad-hoc `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migrations inline (there is no Alembic — schema changes to existing columns need a new idempotent `ALTER` statement added here), and seeds the admin account + 3 demo users + sample CRM data **only if they don't already exist** (admin password is not reset on restart). *(This whole paragraph describes the pre-migration state; Phase 0 of the CRM v2 migration below replaces `create_all`/ad-hoc `ALTER` with Alembic.)*
 
 **Frontend**: CRA (JS/JSX, not TS). `App.js` defines all routes wrapped in a `Protected` component that checks `useAuth()` and an optional `roles`/`adminOnly` prop — this is the only route-level RBAC; page components assume they're already authorized. `api.js` is a single shared axios instance (`withCredentials: true`, baseURL from `REACT_APP_BACKEND_URL`) — always import it rather than creating new axios instances, and use its `formatApiError()` for surfacing backend error details. `NotificationContext` (`src/context/`) polls once and feeds both the sidebar and mobile bell so they stay in sync — don't add a second poller. Pages are flat, one file per entity (list + kanban where relevant) plus `*Detail.jsx` for entity detail views; there's no shared CRUD abstraction across pages, so follow the pattern of the most similar existing page (e.g. `Contacts.jsx`/`ContactDetail.jsx`) rather than inventing a new structure.
 
 **i18n**: all user-facing strings go through `i18next` (`src/i18n.js` holds the full EN/HU dictionaries inline — no external locale files). Add new keys to both language blocks together.
+
+## CRM v2 migration (in progress — `INTEGRATION_PLAN.md` is the source of truth)
+
+The repo is mid-migration from the MVP described above to an expanded CRM (access control, lead ownership/ball-in-court, milestone billing, deal→project automation, a scheduler, and an MCP server). **`INTEGRATION_PLAN.md`** (Hungarian) is the authoritative, phase-by-phase spec — read it in full before touching any phase's code; `DISCOVERY_REPORT.md` documents the pre-migration baseline it was written against. `INSTRUCTION.md` defines the working process (one feature-branch per phase, STOP-and-approve after each phase). This section is updated as each phase lands — treat it as the current-state summary, `INTEGRATION_PLAN.md` as the detailed design.
+
+### New data model elements (introduced phase-by-phase, not all present yet)
+
+- **`EventLog`** — generic, append-only audit trail: `entity_type`+`entity_id` (no DB FK — spans multiple tables), `event_type` (`created, claimed, stage_changed, status_changed, activity_logged, owner_changed, visibility_changed`, …), `from_value`/`to_value`, `actor_type`(`user`/`service`)+`actor_id`, optional `activity_id` FK, `note`, `created_at`. Written via a shared `log_event()` helper in `backend/utils.py` from **every** write path, for **every** `entity_type`, starting at Phase 0 — even before an entity has a timeline UI. `won`/`lost` are not separate event types; they're a `stage_changed` with `to_value="won"/"lost"`. Rows are never deleted, even if the parent entity is hard-deleted (deleted entities' `/timeline` returns 404/"archived", not a dangling error).
+- **`EntityMembership`** — generic tagging table for the visibility model: `entity_type`, `entity_id`, `user_id`, `added_by`, `added_at`. The owner is auto-tagged. Grants access to `private` Deals/Projects beyond the owner.
+- **`Milestone`** — belongs to a `Project` (CASCADE), replaces ad-hoc hourly billing for client-facing invoicing: `project_id`, `name`, `order_index`, `due_date`, `amount` XOR `percentage` (exactly one, enforced), separate `work_status` (`in_progress → client_review → accepted`) and `payment_status` (`not_due → invoiceable → invoiced → paid`) — independently settable, reversible in both directions, every change logged via `log_event`.
+- **`ServiceAccount`** — API-key principal for machine/agent access (MCP server enabler), plugged into the same capability model as human users; auth via `X-API-Key` alongside the existing cookie/bearer JWT flow in `auth.py`.
+- **New fields**: `Deal.visibility` (`public`/`private`), `lead_type` (`single`/`double`), `contract_company_id`/`contract_contact_id` (FK, SET NULL — the paying/contracting party when it differs from the day-to-day contact), `referred_by_contact_id` (self-referential FK to `Contact`), `source` (`Literal["inbound","outreach","referral","other"]`), `ball_in_court` (`us`/`them`/`none`), `last_contact_at`, `claimed_at`, `is_stale`; `Activity.direction` (`inbound`/`outbound`/`internal`, replaces the old `[Inbound]/[Outbound]` subject-line prefix hack); `Project.deal_id` (FK, SET NULL, populated by the won→project automation), `closed_at`, `follow_up_days` (default 60), `satisfaction_score`.
+- Full field-level detail for each of these lives in `INTEGRATION_PLAN.md`, not duplicated here.
+
+### Access model (4 layers, replacing plain `ROLE_LEVELS` gating)
+
+1. **Role** (unchanged) — `admin/manager/user/guest`, `ROLE_LEVELS` hierarchy in `auth.py`. Admin and manager always see everything.
+2. **Object visibility** — `Deal`/`Project.visibility` (`public`/`private`), org-wide default `public` (admin-configurable).
+3. **Membership** — `EntityMembership`; owner auto-tagged; only members (+ admin/manager) see a `private` object.
+4. **Capability matrix** — a bounded, admin-configurable set of capabilities (`view_financials`, `manage_deals`, `manage_projects`, `invite_members`, `set_visibility`, `reassign_owner`, `view_all_reports`), stored as JSON under an `AppSetting` key (`role_capabilities`), enforced via a new `require_capability()` dependency (`auth.py`, same shape as `require_role`/`require_write`). `manage_users`/`configure_permissions` are fixed to admin-only, never configurable. Once introduced, `require_capability` is the deciding layer at any endpoint it guards — `require_role`/`require_write` either get replaced or are explicitly subordinate to it; never both silently gating the same route with different intent.
+
+Visibility filtering and financial masking (see below) must be applied everywhere Deal/Project data can leak, not just the primary list endpoints: `deals.py`, `projects.py` (list+detail), `companies/{id}/detail`, `contacts/{id}/detail`, `dashboard.py`, and the `data_io.py` CSV export (which today has no role-gate at all).
+
+### Conventions introduced by the migration (apply from the phase that lands them onward)
+
+- **Every enum-like field gets a Pydantic `Literal`** in `schemas.py` — no more router-local `VALID_*` set checks as the only validation (this closes the pre-existing `Project.priority`/`User.role` gap).
+- **Every write path logs via `log_event()`** (`backend/utils.py`) — don't hand-roll ad-hoc audit inserts.
+- **Financial masking is one shared serializer-dependency**, not per-field conditionals scattered across routers: money fields (`Deal.value`, `Project.budget`/`hourly_rate`, `Milestone.amount`) become `Optional` in the `*Out` schemas, and a common dependency nulls them out when the caller lacks `view_financials`. Non-`*Out`-based surfaces (`dashboard.py` KPIs, CSV export) need the masking applied explicitly since they bypass the schema layer.
+- **Schema migrations are Alembic-only from Phase 0 onward** — `Base.metadata.create_all` and the ad-hoc `ALTER TABLE IF NOT EXISTS` lines in `server.py:56-59` are retired; `alembic upgrade head` runs before `seed()`, both in the Docker entrypoint and in the pytest fixtures (which hit a live server, so the DB must be migrated before tests start).
+- **`owner_id`/`user_id` ownership fields stay server-set, never client input** — the existing pattern (`owner_id=user.id` at creation, excluded from all Create/Update schemas) extends to the new `unassigned`-flag-based claim flow; still no endpoint accepts an arbitrary `owner_id`.
+
+### Working method for this migration
+
+- One feature branch per phase (e.g. `feat/phase-0-foundations`); never commit migration work directly to `main`.
+- **Definition of done = all tests green.** New functionality needs a new pytest integration test (against a live seeded server, per the existing `backend/tests/` pattern); if a phase's change legitimately alters an existing test's expected behavior (e.g. invalid enums now 422 instead of silently falling back), update that test as part of the same phase.
+- One commit per logical feature within a phase, not one giant phase-commit.
+- **Stop after every phase and Step 0**, report what changed and the test results, and wait for explicit approval before starting the next phase — don't jump ahead.
+- If the plan is ambiguous or self-contradictory for the code as it stands, stop and ask rather than guessing.
+
+### Locked decisions (D1–D11 — not open questions, implement to these values)
+
+| # | Decision | Locked value |
+|---|---|---|
+| D1 | Owner requirement | An unassigned lead may sit in the shared inbox, but can't advance past `qualified`, and project creation requires an owner. |
+| D2 | Financial masking | Pattern "A" — `Optional` fields in `*Out` schemas + one shared nulling serializer-dependency. |
+| D3 | Time tracking's role | Internal cost/utilization only; client billing runs off milestones, not the hourly rate. |
+| D4 | "Pass" metric | Number of `ball_in_court` direction changes. |
+| D5 | Visibility default | New Deal/Project defaults to `public` (admin can change the global default). |
+| D6 | `view_financials` default | admin ✅, manager ✅, user ✅ (on), guest ❌ (off). |
+| D7 | Thresholds (business days, global, admin-configurable) | unassigned: **2** · awaiting-response: **5** · stale: **14**. |
+| D8 | Ball-in-court threading | One thread per deal for now (no per-topic sub-threads). |
+| D9 | EventLog timeline UI rollout order | Deal first, then Project (logging itself covers every `entity_type` from Phase 0). |
+| D10 | `Deal.source` enum | `inbound` / `outreach` / `referral` / `other`. |
+| D11 | Milestone amount | `amount` XOR `percentage` — exactly one must be set. |
+
+Accepted simplification: visibility/membership applies only to Deal and Project — Contacts and Companies stay visible to every logged-in user (client PII, referral graph). Google Workspace integration (SSO, Gmail/Calendar auto-logging) is explicitly out of scope; the `google_*` User columns stay dead fields.
 
 ## Security-sensitive defaults (do not regress)
 
