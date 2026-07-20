@@ -9,7 +9,8 @@ from utils import log_event
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
-@router.get("", response_model=list[CompanyOut])
+@router.get("", response_model=list[CompanyOut],
+           summary="List companies", description="List companies, optionally filtered by a case-insensitive name search, newest first.")
 def list_companies(search: str = "", db: Session = Depends(get_db),
                    _: User = Depends(get_current_user)):
     q = db.query(Company)
@@ -18,7 +19,8 @@ def list_companies(search: str = "", db: Session = Depends(get_db),
     return q.order_by(Company.created_at.desc()).all()
 
 
-@router.get("/{company_id}/detail")
+@router.get("/{company_id}/detail",
+           summary="Get company with related records", description="Company plus its contacts, deals, and projects.")
 def company_detail(company_id: str, db: Session = Depends(get_db),
                    _: User = Depends(get_current_user)):
     c = db.query(Company).filter(Company.id == company_id).first()
@@ -35,7 +37,8 @@ def company_detail(company_id: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/{company_id}", response_model=CompanyOut)
+@router.get("/{company_id}", response_model=CompanyOut,
+           summary="Get a company", description="Get a single company by id.")
 def get_company(company_id: str, db: Session = Depends(get_db),
                 _: User = Depends(get_current_user)):
     c = db.query(Company).filter(Company.id == company_id).first()
@@ -44,7 +47,8 @@ def get_company(company_id: str, db: Session = Depends(get_db),
     return c
 
 
-@router.post("", response_model=CompanyOut)
+@router.post("", response_model=CompanyOut,
+            summary="Create a company", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_company(payload: CompanyCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = Company(**payload.model_dump(), owner_id=user.id)
@@ -56,7 +60,8 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db),
     return c
 
 
-@router.put("/{company_id}", response_model=CompanyOut)
+@router.put("/{company_id}", response_model=CompanyOut,
+           summary="Update a company", description="Full replace of the editable fields (owner_id is preserved, not part of the payload).")
 def update_company(company_id: str, payload: CompanyCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Company).filter(Company.id == company_id).first()
@@ -69,7 +74,8 @@ def update_company(company_id: str, payload: CompanyCreate, db: Session = Depend
     return c
 
 
-@router.delete("/{company_id}")
+@router.delete("/{company_id}",
+              summary="Delete a company", description="Hard delete; nulls out company_id on any contacts/deals/projects/activities that referenced it first.")
 def delete_company(company_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Company).filter(Company.id == company_id).first()

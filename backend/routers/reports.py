@@ -17,7 +17,8 @@ def period_start(period: str) -> datetime:
     return monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-@router.get("/utilization")
+@router.get("/utilization", summary="Get team utilization report",
+           description="Per-user total/billable hours, billable amount, and utilization % for the current week or month. Manager+ only.")
 def utilization(period: str = "week", db: Session = Depends(get_db),
                 _: User = Depends(require_role("manager"))):
     start = period_start(period)

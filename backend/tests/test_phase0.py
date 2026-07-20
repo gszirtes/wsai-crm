@@ -158,3 +158,53 @@ class TestEventLog:
         r = user_client.get(f"{base_url}/api/event-logs",
                             params={"entity_type": "deal", "entity_id": "anything"})
         assert r.status_code == 403
+
+
+class TestSchemaHygiene:
+    """0.4: Literal-typed enums reject invalid values with 422 instead of the
+    old silent-fallback-to-default behavior, and every error response shares
+    one envelope shape."""
+
+    def test_invalid_role_on_create_rejected_not_fallback(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/users", json={
+            "email": f"test_p0_badrole_{id(self)}@example.com",
+            "password": "secret123", "name": "Bad Role", "role": "superadmin",
+        })
+        assert r.status_code == 422, r.text
+
+    def test_invalid_role_on_update_rejected(self, admin_client, base_url):
+        r = admin_client.get(f"{base_url}/api/users")
+        target = next(u for u in r.json() if u["email"] == "user@wespeak.ai")
+        r = admin_client.put(f"{base_url}/api/users/{target['id']}", json={"role": "superadmin"})
+        assert r.status_code == 422, r.text
+
+    def test_invalid_priority_on_project_create_rejected(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/projects", json={
+            "name": "TEST_p0 bad priority", "priority": "urgent",
+        })
+        assert r.status_code == 422, r.text
+
+    def test_valid_role_still_works(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/users", json={
+            "email": f"test_p0_okrole_{id(self)}@example.com",
+            "password": "secret123", "name": "OK Role", "role": "manager",
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["role"] == "manager"
+        admin_client.delete(f"{base_url}/api/users/{r.json()['id']}")
+
+    def test_error_envelope_on_404(self, admin_client, base_url):
+        r = admin_client.get(f"{base_url}/api/deals/does-not-exist")
+        assert r.status_code == 404
+        body = r.json()
+        assert body["detail"] == "Deal not found"
+        assert body["status_code"] == 404
+        assert body["path"] == "/api/deals/does-not-exist"
+
+    def test_error_envelope_on_validation_error(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "x", "stage": "bogus"})
+        assert r.status_code == 422
+        body = r.json()
+        assert isinstance(body["detail"], list)
+        assert body["status_code"] == 422
+        assert body["path"] == "/api/deals"

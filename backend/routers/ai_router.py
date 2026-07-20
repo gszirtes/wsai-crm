@@ -106,7 +106,8 @@ def _execute(action: str, data: dict, db: Session, user: User):
     return created
 
 
-@router.post("/command")
+@router.post("/command", summary="Run an AI command",
+            description="Send free-form text to the configured OpenRouter model, which returns a structured {action, data, message}. Enum fields in `data` are re-validated server-side before any write (never trusted from the LLM). Write actions (create_*) are blocked for guests.")
 async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     api_key = get_openrouter_key(db)
@@ -138,7 +139,7 @@ async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
     return {"action": action, "message": message, "created": created}
 
 
-@router.get("/history")
+@router.get("/history", summary="Get AI command history", description="List the current user's own last 20 AI commands and their outcomes.")
 def ai_history(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.query(AICommandLog).filter(AICommandLog.user_id == user.id) \
         .order_by(AICommandLog.created_at.desc()).limit(20).all()

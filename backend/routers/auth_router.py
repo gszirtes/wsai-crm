@@ -16,7 +16,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "false").lower() == "true"
 
 
-@router.post("/register", response_model=UserOut)
+@router.post("/register", response_model=UserOut,
+            summary="Self-register", description="Public sign-up, disabled by default (ALLOW_REGISTRATION=false). Always creates a 'user' role account.")
 @limiter.limit("3/minute")
 def register(request: Request, payload: RegisterRequest, response: Response,
              db: Session = Depends(get_db)):
@@ -42,7 +43,8 @@ def register(request: Request, payload: RegisterRequest, response: Response,
     return user
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/login", response_model=UserOut,
+            summary="Log in", description="Verify email/password, set httpOnly access+refresh cookies.")
 @limiter.limit("5/minute")
 def login(request: Request, payload: LoginRequest, response: Response,
           db: Session = Depends(get_db)):
@@ -58,19 +60,19 @@ def login(request: Request, payload: LoginRequest, response: Response,
     return user
 
 
-@router.post("/logout")
+@router.post("/logout", summary="Log out", description="Clear the access and refresh cookies.")
 def logout(response: Response):
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return {"success": True}
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=UserOut, summary="Get current user", description="Return the authenticated user's own profile.")
 def me(user: User = Depends(get_current_user)):
     return user
 
 
-@router.post("/refresh")
+@router.post("/refresh", summary="Refresh tokens", description="Exchange a valid refresh cookie for a new access+refresh token pair.")
 @limiter.limit("10/minute")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     token = request.cookies.get("refresh_token")

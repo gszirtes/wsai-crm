@@ -15,7 +15,8 @@ def _to_out(c: Contact) -> ContactOut:
     return out
 
 
-@router.get("", response_model=list[ContactOut])
+@router.get("", response_model=list[ContactOut],
+           summary="List contacts", description="List contacts, optionally filtered by name/email search, status, or company, newest first.")
 def list_contacts(search: str = "", status: str = "", company_id: str = "",
                   db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     q = db.query(Contact)
@@ -30,7 +31,8 @@ def list_contacts(search: str = "", status: str = "", company_id: str = "",
     return [_to_out(c) for c in q.options(joinedload(Contact.company)).order_by(Contact.created_at.desc()).all()]
 
 
-@router.get("/{contact_id}/detail")
+@router.get("/{contact_id}/detail",
+           summary="Get contact with related records", description="Contact plus its deals and activity timeline.")
 def contact_detail(contact_id: str, db: Session = Depends(get_db),
                    _: User = Depends(get_current_user)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -47,7 +49,8 @@ def contact_detail(contact_id: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/{contact_id}", response_model=ContactOut)
+@router.get("/{contact_id}", response_model=ContactOut,
+           summary="Get a contact", description="Get a single contact by id.")
 def get_contact(contact_id: str, db: Session = Depends(get_db),
                 _: User = Depends(get_current_user)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -56,7 +59,8 @@ def get_contact(contact_id: str, db: Session = Depends(get_db),
     return _to_out(c)
 
 
-@router.post("", response_model=ContactOut)
+@router.post("", response_model=ContactOut,
+            summary="Create a contact", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_contact(payload: ContactCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = Contact(**payload.model_dump(), owner_id=user.id)
@@ -68,7 +72,8 @@ def create_contact(payload: ContactCreate, db: Session = Depends(get_db),
     return _to_out(c)
 
 
-@router.put("/{contact_id}", response_model=ContactOut)
+@router.put("/{contact_id}", response_model=ContactOut,
+           summary="Update a contact", description="Full replace of the editable fields. Logs a status_changed event if status differs from before.")
 def update_contact(contact_id: str, payload: ContactCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -84,7 +89,8 @@ def update_contact(contact_id: str, payload: ContactCreate, db: Session = Depend
     return _to_out(c)
 
 
-@router.delete("/{contact_id}")
+@router.delete("/{contact_id}",
+              summary="Delete a contact", description="Hard delete; nulls out contact_id on any deals/activities that referenced it first.")
 def delete_contact(contact_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()

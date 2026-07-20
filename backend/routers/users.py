@@ -7,30 +7,30 @@ from auth import get_current_user, require_role, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-VALID_ROLES = {"admin", "manager", "user", "guest"}
 
-
-@router.get("", response_model=list[UserOut])
+@router.get("", response_model=list[UserOut],
+           summary="List users", description="List all users, newest first. Admin only.")
 def list_users(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
     return db.query(User).order_by(User.created_at.desc()).all()
 
 
-@router.post("", response_model=UserOut)
+@router.post("", response_model=UserOut,
+            summary="Create a user", description="Admin-created account with an explicit role. Admin only.")
 def create_user(payload: RegisterRequest, db: Session = Depends(get_db),
                 admin: User = Depends(require_role("admin"))):
     email = payload.email.lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    role = payload.role if payload.role in VALID_ROLES else "user"
     user = User(email=email, password_hash=hash_password(payload.password),
-                name=payload.name, role=role, auth_provider="local")
+                name=payload.name, role=payload.role or "user", auth_provider="local")
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
 
-@router.put("/{user_id}", response_model=UserOut)
+@router.put("/{user_id}", response_model=UserOut,
+           summary="Update a user", description="Update name/role/locale/active/password. Admin only; an admin cannot demote or deactivate themself.")
 def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db),
                 admin: User = Depends(require_role("admin"))):
     user = db.query(User).filter(User.id == user_id).first()
@@ -38,7 +38,7 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="User not found")
     if payload.name is not None:
         user.name = payload.name
-    if payload.role is not None and payload.role in VALID_ROLES:
+    if payload.role is not None:
         if user.id == admin.id and payload.role != "admin":
             raise HTTPException(status_code=400, detail="You cannot change your own admin role")
         user.role = payload.role
@@ -55,7 +55,7 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     return user
 
 
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", summary="Delete a user", description="Admin only; an admin cannot delete themself.")
 def delete_user(user_id: str, db: Session = Depends(get_db),
                 admin: User = Depends(require_role("admin"))):
     if user_id == admin.id:
@@ -68,7 +68,8 @@ def delete_user(user_id: str, db: Session = Depends(get_db),
     return {"success": True}
 
 
-@router.put("/me/locale", response_model=UserOut)
+@router.put("/me/locale", response_model=UserOut,
+           summary="Update own locale", description="Set the current user's UI language (en/hu). Any authenticated user.")
 def update_my_locale(payload: LocaleUpdate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     user.locale = payload.locale

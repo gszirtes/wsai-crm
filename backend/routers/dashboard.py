@@ -8,7 +8,8 @@ from auth import get_current_user
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-@router.get("/stats")
+@router.get("/stats", summary="Get dashboard KPIs",
+           description="Aggregate counts/sums across all contacts, companies, deals, projects, and open tasks, plus breakdowns by deal stage, contact status, and project status.")
 def stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     total_contacts = db.query(func.count(Contact.id)).scalar()
     total_companies = db.query(func.count(Company.id)).scalar()

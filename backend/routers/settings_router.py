@@ -9,7 +9,8 @@ from ai_service import get_setting, set_setting, encrypt_value, get_model
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
-@router.get("")
+@router.get("", summary="Get AI settings",
+           description="Whether an OpenRouter API key is configured (never returns the key itself) and the current model. Admin only.")
 def get_settings(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
     key = get_setting(db, "openrouter_api_key")
     return {
@@ -18,7 +19,8 @@ def get_settings(db: Session = Depends(get_db), _: User = Depends(require_role("
     }
 
 
-@router.put("")
+@router.put("", summary="Update AI settings",
+           description="Set the OpenRouter API key (stored Fernet-encrypted) and/or model. Admin only.")
 def update_settings(payload: SettingUpdate, db: Session = Depends(get_db),
                     _: User = Depends(require_role("admin"))):
     if payload.openrouter_api_key:

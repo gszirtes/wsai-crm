@@ -8,6 +8,8 @@ ContactStatus = Literal["lead", "prospect", "customer", "inactive"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed", "cancelled"]
 ActivityType = Literal["call", "email", "meeting", "task", "note"]
 ActivityDirection = Literal["inbound", "outbound", "internal"]
+ProjectPriority = Literal["low", "medium", "high"]
+UserRole = Literal["admin", "manager", "user", "guest"]
 
 
 # ---------- Auth ----------
@@ -15,7 +17,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str
-    role: Optional[str] = "user"
+    role: Optional[UserRole] = "user"
 
 
 class LoginRequest(BaseModel):
@@ -27,7 +29,7 @@ class UserOut(BaseModel):
     id: str
     email: str
     name: str
-    role: str
+    role: UserRole
     avatar_url: Optional[str] = None
     locale: str = "en"
     auth_provider: str = "local"
@@ -41,7 +43,7 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[UserRole] = None
     locale: Optional[str] = None
     active: Optional[bool] = None
     password: Optional[str] = None
@@ -134,7 +136,7 @@ class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
     status: Optional[ProjectStatus] = "planning"
-    priority: Optional[str] = "medium"
+    priority: Optional[ProjectPriority] = "medium"
     budget: Optional[float] = 0
     estimated_hours: Optional[float] = 0
     hourly_rate: Optional[float] = 0

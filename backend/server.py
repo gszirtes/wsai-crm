@@ -3,9 +3,11 @@ load_dotenv()
 
 import os
 from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi.errors import RateLimitExceeded
 
 from database import SessionLocal
@@ -19,7 +21,35 @@ from routers import (auth_router, users, companies, contacts, deals, projects,
 app = FastAPI(title="wespeak.ai CRM")
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Every error response (HTTPException, Pydantic validation, rate limiting)
+# gets the same envelope: {detail, status_code, path}. `detail` keeps its
+# existing shape (string for HTTPException, list-of-{loc,msg,type} for
+# validation errors) since the frontend's formatApiError() already reads
+# response.data.detail and handles both shapes -- this only adds fields, it
+# doesn't change what's already there. status_code/path are new, so a
+# machine caller (an MCP agent, eventually) always has a uniform way to read
+# an error regardless of which of these three paths produced it.
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(status_code=exc.status_code, headers=exc.headers,
+                        content={"detail": exc.detail, "status_code": exc.status_code,
+                                 "path": request.url.path})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422,
+                        content={"detail": exc.errors(), "status_code": 422,
+                                 "path": request.url.path})
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429,
+                        content={"detail": f"Rate limit exceeded: {exc.detail}",
+                                 "status_code": 429, "path": request.url.path})
 
 app.add_middleware(
     CORSMiddleware,

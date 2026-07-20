@@ -27,7 +27,7 @@ def _csv_response(rows, fieldnames, filename):
     )
 
 
-@router.get("/export/contacts.csv")
+@router.get("/export/contacts.csv", summary="Export contacts as CSV", description="Download all contacts as a CSV file. Any authenticated user, including guests -- there is no admin/manager gate on bulk export.")
 def export_contacts(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = []
     for c in db.query(Contact).all():
@@ -41,7 +41,7 @@ def export_contacts(db: Session = Depends(get_db), _: User = Depends(get_current
         "contacts.csv")
 
 
-@router.get("/export/companies.csv")
+@router.get("/export/companies.csv", summary="Export companies as CSV", description="Download all companies as a CSV file. Any authenticated user, including guests.")
 def export_companies(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = [{
         "name": c.name, "industry": c.industry, "website": c.website,
@@ -52,7 +52,7 @@ def export_companies(db: Session = Depends(get_db), _: User = Depends(get_curren
         "companies.csv")
 
 
-@router.get("/export/deals.csv")
+@router.get("/export/deals.csv", summary="Export deals as CSV", description="Download all deals as a CSV file. Any authenticated user, including guests.")
 def export_deals(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = [{
         "title": d.title, "value": d.value, "currency": d.currency,
@@ -62,7 +62,7 @@ def export_deals(db: Session = Depends(get_db), _: User = Depends(get_current_us
         ["title", "value", "currency", "stage", "probability"], "deals.csv")
 
 
-@router.get("/export/projects.csv")
+@router.get("/export/projects.csv", summary="Export projects as CSV", description="Download all projects as a CSV file. Any authenticated user, including guests.")
 def export_projects(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = [{
         "name": p.name, "status": p.status, "priority": p.priority,
@@ -72,7 +72,8 @@ def export_projects(db: Session = Depends(get_db), _: User = Depends(get_current
         ["name", "status", "priority", "budget", "estimated_hours"], "projects.csv")
 
 
-@router.post("/import/contacts")
+@router.post("/import/contacts", summary="Import contacts from CSV",
+            description="Bulk-create contacts from a .csv upload. Unknown company names are auto-created; rows with a duplicate email (existing or within the file) are skipped and reported as errors, not failed outright.")
 async def import_contacts(file: UploadFile = File(...), db: Session = Depends(get_db),
                           user: User = Depends(require_write)):
     if not file.filename.endswith(".csv"):

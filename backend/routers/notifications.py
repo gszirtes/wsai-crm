@@ -70,7 +70,7 @@ def _sync(db: Session, user: User):
     db.commit()
 
 
-@router.get("")
+@router.get("", summary="List notifications", description="Sync auto-generated notifications (overdue/due-today tasks, at-risk projects) for the current user, then list them, unread first.")
 def list_notifications(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _sync(db, user)
     items = db.query(Notification).filter(Notification.user_id == user.id) \
@@ -82,7 +82,7 @@ def list_notifications(db: Session = Depends(get_db), user: User = Depends(get_c
     }
 
 
-@router.post("/{notification_id}/read")
+@router.post("/{notification_id}/read", summary="Mark one notification read", description="Mark a single notification (owned by the current user) as read.")
 def mark_read(notification_id: str, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     n = db.query(Notification).filter(Notification.id == notification_id,
@@ -94,7 +94,7 @@ def mark_read(notification_id: str, db: Session = Depends(get_db),
     return {"success": True}
 
 
-@router.post("/read-all")
+@router.post("/read-all", summary="Mark all notifications read", description="Mark all of the current user's unread notifications as read.")
 def mark_all_read(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     db.query(Notification).filter(Notification.user_id == user.id, Notification.read == False) \
         .update({Notification.read: True})

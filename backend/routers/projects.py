@@ -36,7 +36,8 @@ def to_out(db: Session, p: Project) -> ProjectOut:
     return out
 
 
-@router.get("", response_model=list[ProjectOut])
+@router.get("", response_model=list[ProjectOut],
+           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header.")
 def list_projects(response: Response, status: str = "", limit: int = 20, offset: int = 0,
                   db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     q = db.query(Project)
@@ -61,7 +62,8 @@ def list_projects(response: Response, status: str = "", limit: int = 20, offset:
     return out
 
 
-@router.get("/{project_id}", response_model=ProjectOut)
+@router.get("/{project_id}", response_model=ProjectOut,
+           summary="Get a project", description="Get a single project by id, including computed logged_hours and health.")
 def get_project(project_id: str, db: Session = Depends(get_db),
                 _: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
@@ -70,7 +72,8 @@ def get_project(project_id: str, db: Session = Depends(get_db),
     return to_out(db, p)
 
 
-@router.get("/{project_id}/detail")
+@router.get("/{project_id}/detail",
+           summary="Get project with related records", description="Project plus time entries, billable amount, health, and activity timeline.")
 def project_detail(project_id: str, db: Session = Depends(get_db),
                    _: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
@@ -104,7 +107,8 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
     }
 
 
-@router.post("", response_model=ProjectOut)
+@router.post("", response_model=ProjectOut,
+            summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     p = Project(**payload.model_dump(), owner_id=user.id)
@@ -116,7 +120,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
     return to_out(db, p)
 
 
-@router.put("/{project_id}", response_model=ProjectOut)
+@router.put("/{project_id}", response_model=ProjectOut,
+           summary="Update a project", description="Full replace of the editable fields. Logs a status_changed event if status differs from before; no other transition guard.")
 def update_project(project_id: str, payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     p = db.query(Project).filter(Project.id == project_id).first()
@@ -132,7 +137,8 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
     return to_out(db, p)
 
 
-@router.delete("/{project_id}")
+@router.delete("/{project_id}",
+              summary="Delete a project", description="Hard delete; also deletes all of the project's time entries.")
 def delete_project(project_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     p = db.query(Project).filter(Project.id == project_id).first()
@@ -145,7 +151,8 @@ def delete_project(project_id: str, db: Session = Depends(get_db),
 
 
 # ---------- Time entries ----------
-@router.get("/{project_id}/time", response_model=list[TimeEntryOut])
+@router.get("/{project_id}/time", response_model=list[TimeEntryOut],
+           summary="List time entries", description="List logged time entries for a project, most recent first.")
 def list_time(project_id: str, db: Session = Depends(get_db),
               _: User = Depends(get_current_user)):
     entries = db.query(TimeEntry).filter(TimeEntry.project_id == project_id) \
@@ -159,7 +166,8 @@ def list_time(project_id: str, db: Session = Depends(get_db),
     return out
 
 
-@router.post("/{project_id}/time", response_model=TimeEntryOut)
+@router.post("/{project_id}/time", response_model=TimeEntryOut,
+            summary="Log time", description="Log an hours entry against a project for the current user. user_id is always the creating user, never accepted from the payload.")
 def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(get_db),
              user: User = Depends(require_write)):
     if not db.query(Project).filter(Project.id == project_id).first():
@@ -180,7 +188,8 @@ def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(ge
     return eo
 
 
-@router.delete("/{project_id}/time/{entry_id}")
+@router.delete("/{project_id}/time/{entry_id}",
+              summary="Delete a time entry", description="Delete one time entry. Only the entry's own creator, or an admin/manager, may delete it.")
 def delete_time(project_id: str, entry_id: str, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     e = db.query(TimeEntry).filter(TimeEntry.id == entry_id,

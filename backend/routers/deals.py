@@ -12,7 +12,8 @@ STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
                      "negotiation": 75, "won": 100, "lost": 0}
 
 
-@router.get("", response_model=list[DealOut])
+@router.get("", response_model=list[DealOut],
+           summary="List deals", description="List deals, optionally filtered by stage, newest first.")
 def list_deals(stage: str = "", db: Session = Depends(get_db),
                _: User = Depends(get_current_user)):
     q = db.query(Deal)
@@ -21,7 +22,8 @@ def list_deals(stage: str = "", db: Session = Depends(get_db),
     return q.order_by(Deal.created_at.desc()).all()
 
 
-@router.get("/{deal_id}/detail")
+@router.get("/{deal_id}/detail",
+           summary="Get deal with related records", description="Deal plus its company/contact names and activity timeline.")
 def deal_detail(deal_id: str, db: Session = Depends(get_db),
                 _: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -39,7 +41,8 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/{deal_id}", response_model=DealOut)
+@router.get("/{deal_id}", response_model=DealOut,
+           summary="Get a deal", description="Get a single deal by id.")
 def get_deal(deal_id: str, db: Session = Depends(get_db),
              _: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -48,7 +51,8 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
     return d
 
 
-@router.post("", response_model=DealOut)
+@router.post("", response_model=DealOut,
+            summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     d = Deal(**payload.model_dump(), owner_id=user.id)
@@ -60,7 +64,8 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
     return d
 
 
-@router.put("/{deal_id}", response_model=DealOut)
+@router.put("/{deal_id}", response_model=DealOut,
+           summary="Update a deal", description="Full replace of the editable fields. Logs a stage_changed event if stage differs from before; no other transition guard.")
 def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -76,7 +81,8 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
     return d
 
 
-@router.patch("/{deal_id}/stage", response_model=DealOut)
+@router.patch("/{deal_id}/stage", response_model=DealOut,
+             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Any stage can move to any other stage; there is no transition guard. Logs a stage_changed event.")
 def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
                  user: User = Depends(require_write)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -92,7 +98,8 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
     return d
 
 
-@router.delete("/{deal_id}")
+@router.delete("/{deal_id}",
+              summary="Delete a deal", description="Hard delete; nulls out deal_id on any activities that referenced it first.")
 def delete_deal(deal_id: str, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
