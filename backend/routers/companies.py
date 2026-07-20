@@ -75,7 +75,7 @@ def update_company(company_id: str, payload: CompanyCreate, db: Session = Depend
 
 
 @router.delete("/{company_id}",
-              summary="Delete a company", description="Hard delete; nulls out company_id on any contacts/deals/projects/activities that referenced it first.")
+              summary="Delete a company", description="Hard delete; nulls out company_id on any contacts/deals/projects/activities that referenced it first. Logs a deleted event.")
 def delete_company(company_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Company).filter(Company.id == company_id).first()
@@ -86,6 +86,7 @@ def delete_company(company_id: str, db: Session = Depends(get_db),
     db.query(Deal).filter(Deal.company_id == company_id).update({Deal.company_id: None})
     db.query(Project).filter(Project.company_id == company_id).update({Project.company_id: None})
     db.query(Activity).filter(Activity.company_id == company_id).update({Activity.company_id: None})
+    log_event(db, "company", c.id, "deleted", user)
     db.delete(c)
     db.commit()
     return {"success": True}

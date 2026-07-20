@@ -53,14 +53,18 @@ def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
 
 
 @router.put("/{activity_id}", response_model=ActivityOut,
-           summary="Update an activity", description="Full replace of the editable fields.")
+           summary="Update an activity", description="Full replace of the editable fields. Logs a status_changed event if completed differs from before (same as PATCH /toggle).")
 def update_activity(activity_id: str, payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    old_completed = a.completed
     for k, v in payload.model_dump().items():
         setattr(a, k, v)
+    if a.completed != old_completed:
+        log_event(db, "activity", a.id, "status_changed", user,
+                  from_value=str(old_completed), to_value=str(a.completed))
     db.commit()
     db.refresh(a)
     return a
@@ -82,12 +86,13 @@ def toggle_activity(activity_id: str, db: Session = Depends(get_db),
     return a
 
 
-@router.delete("/{activity_id}", summary="Delete an activity", description="Hard delete.")
+@router.delete("/{activity_id}", summary="Delete an activity", description="Hard delete. Logs a deleted event.")
 def delete_activity(activity_id: str, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    log_event(db, "activity", a.id, "deleted", user)
     db.delete(a)
     db.commit()
     return {"success": True}

@@ -99,7 +99,7 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
 
 
 @router.delete("/{deal_id}",
-              summary="Delete a deal", description="Hard delete; nulls out deal_id on any activities that referenced it first.")
+              summary="Delete a deal", description="Hard delete; nulls out deal_id on any activities that referenced it first. Logs a deleted event.")
 def delete_deal(deal_id: str, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -107,6 +107,7 @@ def delete_deal(deal_id: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Deal not found")
     # Null out child references before deleting
     db.query(Activity).filter(Activity.deal_id == deal_id).update({Activity.deal_id: None})
+    log_event(db, "deal", d.id, "deleted", user)
     db.delete(d)
     db.commit()
     return {"success": True}

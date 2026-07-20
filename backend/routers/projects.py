@@ -138,13 +138,14 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
 
 
 @router.delete("/{project_id}",
-              summary="Delete a project", description="Hard delete; also deletes all of the project's time entries.")
+              summary="Delete a project", description="Hard delete; also deletes all of the project's time entries. Logs a deleted event.")
 def delete_project(project_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     db.query(TimeEntry).filter(TimeEntry.project_id == project_id).delete()
+    log_event(db, "project", p.id, "deleted", user)
     db.delete(p)
     db.commit()
     return {"success": True}

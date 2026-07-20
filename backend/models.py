@@ -162,7 +162,7 @@ class EventLog(Base):
     id = Column(String, primary_key=True, default=gen_id)
     entity_type = Column(String, nullable=False, index=True)  # deal, project, activity, milestone, ...
     entity_id = Column(String, nullable=False, index=True)
-    event_type = Column(String, nullable=False)  # created, claimed, stage_changed, status_changed,
+    event_type = Column(String, nullable=False)  # created, deleted, claimed, stage_changed, status_changed,
                                                   # activity_logged, owner_changed, visibility_changed
     from_value = Column(String, nullable=True)
     to_value = Column(String, nullable=True)

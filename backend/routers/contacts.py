@@ -90,7 +90,7 @@ def update_contact(contact_id: str, payload: ContactCreate, db: Session = Depend
 
 
 @router.delete("/{contact_id}",
-              summary="Delete a contact", description="Hard delete; nulls out contact_id on any deals/activities that referenced it first.")
+              summary="Delete a contact", description="Hard delete; nulls out contact_id on any deals/activities that referenced it first. Logs a deleted event.")
 def delete_contact(contact_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -99,6 +99,7 @@ def delete_contact(contact_id: str, db: Session = Depends(get_db),
     # Null out child references before deleting
     db.query(Deal).filter(Deal.contact_id == contact_id).update({Deal.contact_id: None})
     db.query(Activity).filter(Activity.contact_id == contact_id).update({Activity.contact_id: None})
+    log_event(db, "contact", c.id, "deleted", user)
     db.delete(c)
     db.commit()
     return {"success": True}
