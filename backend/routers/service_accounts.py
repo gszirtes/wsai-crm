@@ -4,6 +4,7 @@ from database import get_db
 from models import ServiceAccount, User
 from schemas import ServiceAccountCreate, ServiceAccountOut, ServiceAccountCreated, ServiceAccountUpdate
 from auth import require_role, generate_api_key, hash_api_key
+from utils import owner_id_for
 
 router = APIRouter(prefix="/api/service-accounts", tags=["service-accounts"])
 
@@ -20,7 +21,7 @@ def create_service_account(payload: ServiceAccountCreate, db: Session = Depends(
                            admin: User = Depends(require_role("admin"))):
     raw_key = generate_api_key()
     sa = ServiceAccount(name=payload.name, role=payload.role,
-                        key_hash=hash_api_key(raw_key), created_by=admin.id)
+                        key_hash=hash_api_key(raw_key), created_by=owner_id_for(admin))
     db.add(sa)
     db.commit()
     db.refresh(sa)

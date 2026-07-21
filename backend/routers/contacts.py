@@ -6,7 +6,7 @@ from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event, owner_id_for
 from visibility import visibility_filter
-from financials import mask_deal_out
+from financials import mask_deal_out, can_view_financials
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -44,9 +44,10 @@ def contact_detail(contact_id: str, db: Session = Depends(get_db),
         .order_by(Deal.created_at.desc()).all()
     activities = db.query(Activity).filter(Activity.contact_id == contact_id) \
         .order_by(Activity.created_at.desc()).all()
+    can_view = can_view_financials(db, user)
     return {
         "contact": _to_out(c).model_dump(),
-        "deals": [mask_deal_out(db, user, DealOut.model_validate(d)).model_dump() for d in deals],
+        "deals": [mask_deal_out(db, user, DealOut.model_validate(d), can_view).model_dump() for d in deals],
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
     }
 

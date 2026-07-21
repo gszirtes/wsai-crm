@@ -8,7 +8,7 @@ from utils import log_event, owner_id_for
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
-from financials import mask_deal_out
+from financials import mask_deal_out, can_view_financials
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -16,8 +16,8 @@ STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
                      "negotiation": 75, "won": 100, "lost": 0}
 
 
-def _to_out(db: Session, d: Deal, user: User) -> DealOut:
-    return mask_deal_out(db, user, DealOut.model_validate(d))
+def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
+    return mask_deal_out(db, user, DealOut.model_validate(d), can_view)
 
 
 @router.get("", response_model=list[DealOut],
@@ -27,7 +27,8 @@ def list_deals(stage: str = "", db: Session = Depends(get_db),
     q = db.query(Deal).filter(visibility_filter(db, Deal, "deal", user))
     if stage:
         q = q.filter(Deal.stage == stage)
-    return [_to_out(db, d, user) for d in q.order_by(Deal.created_at.desc()).all()]
+    can_view = can_view_financials(db, user)
+    return [_to_out(db, d, user, can_view) for d in q.order_by(Deal.created_at.desc()).all()]
 
 
 @router.get("/{deal_id}/detail",
