@@ -44,7 +44,7 @@ export default function Deals() {
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const onDragEnd = async (result) => {
     if (!result.destination || !writable) return;

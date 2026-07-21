@@ -36,7 +36,7 @@ export default function ContactDetail() {
 
   if (!data) return <Spinner />;
   const c = data.contact;
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   return (
     <div className="space-y-6">

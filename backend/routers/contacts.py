@@ -6,6 +6,7 @@ from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event
 from visibility import visibility_filter
+from financials import mask_deal_out
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -45,7 +46,7 @@ def contact_detail(contact_id: str, db: Session = Depends(get_db),
         .order_by(Activity.created_at.desc()).all()
     return {
         "contact": _to_out(c).model_dump(),
-        "deals": [DealOut.model_validate(d).model_dump() for d in deals],
+        "deals": [mask_deal_out(db, user, DealOut.model_validate(d)).model_dump() for d in deals],
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
     }
 

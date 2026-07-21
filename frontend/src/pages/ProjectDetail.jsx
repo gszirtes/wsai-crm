@@ -33,7 +33,7 @@ export default function ProjectDetail() {
 
   if (!data) return <Spinner />;
   const p = data.project;
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const addTime = async () => {
     await api.post(`/projects/${id}/time`, {

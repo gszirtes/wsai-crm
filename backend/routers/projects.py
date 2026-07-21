@@ -11,6 +11,7 @@ from utils import logged_hours_for, log_event
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
+from financials import mask_project_out, can_view_financials
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -31,16 +32,16 @@ def compute_health(project: Project, logged: float) -> str:
     return "on_track"
 
 
-def to_out(db: Session, p: Project) -> ProjectOut:
+def to_out(db: Session, p: Project, user: User) -> ProjectOut:
     logged = logged_hours_for(db, p.id)
     out = ProjectOut.model_validate(p)
     out.logged_hours = logged
     out.health = compute_health(p, logged)
-    return out
+    return mask_project_out(db, user, out)
 
 
 @router.get("", response_model=list[ProjectOut],
-           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header. Private projects only appear for admin/manager, their owner, or invited members.")
+           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header. Private projects only appear for admin/manager, their owner, or invited members. `budget`/`hourly_rate` are null without view_financials.")
 def list_projects(response: Response, status: str = "", limit: int = 20, offset: int = 0,
                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Project).filter(visibility_filter(db, Project, "project", user))
@@ -60,23 +61,23 @@ def list_projects(response: Response, status: str = "", limit: int = 20, offset:
         o = ProjectOut.model_validate(p)
         o.logged_hours = hours.get(p.id, 0.0)
         o.health = compute_health(p, o.logged_hours)
-        out.append(o)
+        out.append(mask_project_out(db, user, o))
     response.headers["X-Total-Count"] = str(total)
     return out
 
 
 @router.get("/{project_id}", response_model=ProjectOut,
-           summary="Get a project", description="Get a single project by id, including computed logged_hours and health.")
+           summary="Get a project", description="Get a single project by id, including computed logged_hours and health. `budget`/`hourly_rate` are null without view_financials.")
 def get_project(project_id: str, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
-    return to_out(db, p)
+    return to_out(db, p, user)
 
 
 @router.get("/{project_id}/detail",
-           summary="Get project with related records", description="Project plus time entries, billable amount, health, and activity timeline. 404 if it's private and this user isn't admin/manager/owner/member.")
+           summary="Get project with related records", description="Project plus time entries, billable amount, health, and activity timeline. 404 if it's private and this user isn't admin/manager/owner/member. `hourly_rate`/`budget`/`billable_amount` are null without view_financials.")
 def project_detail(project_id: str, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
@@ -97,11 +98,12 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
         .order_by(Activity.created_at.desc()).all()
     company = db.query(Company).filter(Company.id == p.company_id).first() if p.company_id else None
     contact = db.query(Contact).filter(Contact.id == p.contact_id).first() if p.contact_id else None
+    can_see_money = can_view_financials(db, user)
     return {
-        "project": to_out(db, p),
+        "project": to_out(db, p, user),
         "logged_hours": logged,
         "billable_hours": billable,
-        "billable_amount": billable * (p.hourly_rate or 0),
+        "billable_amount": (billable * (p.hourly_rate or 0)) if can_see_money else None,
         "health": compute_health(p, logged),
         "company_name": company.name if company else None,
         "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip() if contact else None,
@@ -121,7 +123,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
     add_member(db, "project", p.id, user.id, added_by=user)
     db.commit()
     db.refresh(p)
-    return to_out(db, p)
+    return to_out(db, p, user)
 
 
 @router.put("/{project_id}", response_model=ProjectOut,
@@ -138,7 +140,7 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
         log_event(db, "project", p.id, "status_changed", user, from_value=old_status, to_value=p.status)
     db.commit()
     db.refresh(p)
-    return to_out(db, p)
+    return to_out(db, p, user)
 
 
 @router.patch("/{project_id}/visibility", response_model=ProjectOut,
@@ -154,7 +156,7 @@ def update_visibility(project_id: str, payload: VisibilityUpdate, db: Session = 
         log_event(db, "project", p.id, "visibility_changed", user, from_value=old_visibility, to_value=p.visibility)
     db.commit()
     db.refresh(p)
-    return to_out(db, p)
+    return to_out(db, p, user)
 
 
 @router.get("/{project_id}/members",

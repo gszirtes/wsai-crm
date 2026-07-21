@@ -6,6 +6,7 @@ from schemas import CompanyCreate, CompanyOut, ContactOut, DealOut, ProjectOut
 from auth import get_current_user, require_write
 from utils import log_event
 from visibility import visibility_filter
+from financials import mask_deal_out, mask_project_out
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -21,7 +22,7 @@ def list_companies(search: str = "", db: Session = Depends(get_db),
 
 
 @router.get("/{company_id}/detail",
-           summary="Get company with related records", description="Company plus its contacts, deals, and projects. The deals/projects lists are visibility-filtered (private ones only show for admin/manager/owner/member) -- the company record itself is not visibility-scoped.")
+           summary="Get company with related records", description="Company plus its contacts, deals, and projects. The deals/projects lists are visibility-filtered (private ones only show for admin/manager/owner/member) and their money fields masked without view_financials -- the company record itself is not visibility- or financially-scoped.")
 def company_detail(company_id: str, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     c = db.query(Company).filter(Company.id == company_id).first()
@@ -34,8 +35,8 @@ def company_detail(company_id: str, db: Session = Depends(get_db),
     return {
         "company": CompanyOut.model_validate(c).model_dump(),
         "contacts": [ContactOut.model_validate(x).model_dump() for x in contacts],
-        "deals": [DealOut.model_validate(x).model_dump() for x in deals],
-        "projects": [ProjectOut.model_validate(x).model_dump() for x in projects],
+        "deals": [mask_deal_out(db, user, DealOut.model_validate(x)).model_dump() for x in deals],
+        "projects": [mask_project_out(db, user, ProjectOut.model_validate(x)).model_dump() for x in projects],
     }
 
 

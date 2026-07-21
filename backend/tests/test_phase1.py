@@ -390,3 +390,99 @@ class TestVisibilityFiltering:
             assert "TEST_p1_UNIQUE_EXPORT_TITLE" in admin_csv
         finally:
             admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+
+class TestFinancialMasking:
+    """1.5: money fields are null in the response body itself (not just
+    hidden client-side) without view_financials. Guest lacks it by default
+    (D6) and never has manage_deals/manage_projects, so most scenarios here
+    revoke `user`'s view_financials instead, to isolate the capability's
+    effect from the guest role's many other restrictions."""
+
+    def _without_view_financials(self, admin_client, base_url):
+        original = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        revoked = {**original, "user": {**original["user"], "view_financials": False}}
+        admin_client.put(f"{base_url}/api/settings/capabilities", json=revoked)
+        return original
+
+    def _restore(self, admin_client, base_url, original):
+        admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
+
+    def test_deal_value_masked_without_view_financials(self, admin_client, user_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 mask deal", "value": 12345})
+        deal_id = r.json()["id"]
+        original = self._without_view_financials(admin_client, base_url)
+        try:
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}").json()["value"] is None
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}/detail").json()["deal"]["value"] is None
+            listed = [d for d in user_client.get(f"{base_url}/api/deals").json() if d["id"] == deal_id]
+            assert listed[0]["value"] is None
+            # admin (always full capabilities, unaffected by the matrix change) still sees it
+            assert admin_client.get(f"{base_url}/api/deals/{deal_id}").json()["value"] == 12345
+        finally:
+            self._restore(admin_client, base_url, original)
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_project_budget_and_rate_masked_without_view_financials(self, admin_client, user_client, base_url):
+        r = admin_client.post(f"{base_url}/api/projects", json={"name": "TEST_p1 mask proj", "budget": 5000, "hourly_rate": 100})
+        project_id = r.json()["id"]
+        original = self._without_view_financials(admin_client, base_url)
+        try:
+            body = user_client.get(f"{base_url}/api/projects/{project_id}").json()
+            assert body["budget"] is None
+            assert body["hourly_rate"] is None
+            detail = user_client.get(f"{base_url}/api/projects/{project_id}/detail").json()
+            assert detail["project"]["budget"] is None
+            assert detail["billable_amount"] is None
+        finally:
+            self._restore(admin_client, base_url, original)
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_company_detail_masks_nested_deal_value(self, admin_client, user_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/companies", json={"name": "TEST_p1 mask co"})
+        company_id = cr.json()["id"]
+        dr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 mask co deal", "company_id": company_id, "value": 777})
+        deal_id = dr.json()["id"]
+        original = self._without_view_financials(admin_client, base_url)
+        try:
+            detail = user_client.get(f"{base_url}/api/companies/{company_id}/detail").json()
+            match = [d for d in detail["deals"] if d["id"] == deal_id]
+            assert match and match[0]["value"] is None
+        finally:
+            self._restore(admin_client, base_url, original)
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+            admin_client.delete(f"{base_url}/api/companies/{company_id}")
+
+    def test_dashboard_money_fields_masked_without_view_financials(self, admin_client, user_client, base_url):
+        original = self._without_view_financials(admin_client, base_url)
+        try:
+            stats = user_client.get(f"{base_url}/api/dashboard/stats").json()
+            assert stats["pipeline_value"] is None
+            assert stats["won_value"] is None
+            assert all(row["value"] is None for row in stats["deals_by_stage"])
+        finally:
+            self._restore(admin_client, base_url, original)
+
+    def test_export_deals_csv_blanks_value_without_view_financials(self, admin_client, user_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1_MASK_EXPORT", "value": 4242})
+        deal_id = r.json()["id"]
+        original = self._without_view_financials(admin_client, base_url)
+        try:
+            csv_text = user_client.get(f"{base_url}/api/export/deals.csv").text
+            row = [line for line in csv_text.splitlines() if "TEST_p1_MASK_EXPORT" in line][0]
+            assert "4242" not in row
+        finally:
+            self._restore(admin_client, base_url, original)
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_utilization_billable_amount_masked_independent_of_view_all_reports(self, admin_client, user_client, base_url):
+        original = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        try:
+            # grant view_all_reports but explicitly withhold view_financials
+            granted = {**original, "user": {**original["user"], "view_all_reports": True, "view_financials": False}}
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=granted)
+            body = user_client.get(f"{base_url}/api/reports/utilization").json()
+            assert body["totals"]["billable_amount"] is None
+            assert all(row["billable_amount"] is None for row in body["users"])
+        finally:
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=original)

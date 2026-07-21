@@ -8,6 +8,7 @@ from utils import log_event
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
+from financials import mask_deal_out
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -15,18 +16,22 @@ STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
                      "negotiation": 75, "won": 100, "lost": 0}
 
 
+def _to_out(db: Session, d: Deal, user: User) -> DealOut:
+    return mask_deal_out(db, user, DealOut.model_validate(d))
+
+
 @router.get("", response_model=list[DealOut],
-           summary="List deals", description="List deals, optionally filtered by stage, newest first. Private deals only appear for admin/manager, their owner, or invited members.")
+           summary="List deals", description="List deals, optionally filtered by stage, newest first. Private deals only appear for admin/manager, their owner, or invited members. `value` is null without view_financials.")
 def list_deals(stage: str = "", db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     q = db.query(Deal).filter(visibility_filter(db, Deal, "deal", user))
     if stage:
         q = q.filter(Deal.stage == stage)
-    return q.order_by(Deal.created_at.desc()).all()
+    return [_to_out(db, d, user) for d in q.order_by(Deal.created_at.desc()).all()]
 
 
 @router.get("/{deal_id}/detail",
-           summary="Get deal with related records", description="Deal plus its company/contact names and activity timeline. 404 (not just for nonexistent deals) if the deal is private and this user isn't admin/manager/owner/member.")
+           summary="Get deal with related records", description="Deal plus its company/contact names and activity timeline. 404 (not just for nonexistent deals) if the deal is private and this user isn't admin/manager/owner/member. `value` is null without view_financials.")
 def deal_detail(deal_id: str, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -37,7 +42,7 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
     activities = db.query(Activity).filter(Activity.deal_id == deal_id) \
         .order_by(Activity.created_at.desc()).all()
     return {
-        "deal": DealOut.model_validate(d).model_dump(),
+        "deal": _to_out(db, d, user).model_dump(),
         "company_name": company.name if company else None,
         "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip() if contact else None,
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
@@ -45,13 +50,13 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
 
 
 @router.get("/{deal_id}", response_model=DealOut,
-           summary="Get a deal", description="Get a single deal by id. 404 if it's private and this user isn't admin/manager/owner/member.")
+           summary="Get a deal", description="Get a single deal by id. 404 if it's private and this user isn't admin/manager/owner/member. `value` is null without view_financials.")
 def get_deal(deal_id: str, db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
-    return d
+    return _to_out(db, d, user)
 
 
 @router.post("", response_model=DealOut,
@@ -65,7 +70,7 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
     add_member(db, "deal", d.id, user.id, added_by=user)
     db.commit()
     db.refresh(d)
-    return d
+    return _to_out(db, d, user)
 
 
 @router.put("/{deal_id}", response_model=DealOut,
@@ -82,7 +87,7 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
         log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
     db.commit()
     db.refresh(d)
-    return d
+    return _to_out(db, d, user)
 
 
 @router.patch("/{deal_id}/stage", response_model=DealOut,
@@ -99,7 +104,7 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
         log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
     db.commit()
     db.refresh(d)
-    return d
+    return _to_out(db, d, user)
 
 
 @router.patch("/{deal_id}/visibility", response_model=DealOut,
@@ -115,7 +120,7 @@ def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Dep
         log_event(db, "deal", d.id, "visibility_changed", user, from_value=old_visibility, to_value=d.visibility)
     db.commit()
     db.refresh(d)
-    return d
+    return _to_out(db, d, user)
 
 
 @router.get("/{deal_id}/members",

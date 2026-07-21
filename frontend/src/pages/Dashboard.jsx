@@ -46,7 +46,7 @@ export default function Dashboard() {
   if (!stats) return <Spinner />;
 
   const fmt = (n) => new Intl.NumberFormat().format(n);
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const stageData = stats.deals_by_stage.map((d) => ({
     name: t(`statuses.${d.stage}`), value: d.value, stage: d.stage,

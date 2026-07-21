@@ -8,6 +8,7 @@ from models import Contact, Company, Deal, Project, User
 from auth import get_current_user, require_write
 from utils import log_event
 from visibility import visibility_filter
+from financials import can_view_financials
 
 router = APIRouter(prefix="/api", tags=["data"])
 
@@ -54,10 +55,11 @@ def export_companies(db: Session = Depends(get_db), _: User = Depends(get_curren
 
 
 @router.get("/export/deals.csv", summary="Export deals as CSV",
-           description="Download visibility-scoped deals as a CSV file (private ones the caller can't see are excluded). Blocked for guests -- unlike the other three exports, which have no role gate at all (a pre-existing gap the plan flags), this one and projects.csv now require write access.")
+           description="Download visibility-scoped deals as a CSV file (private ones the caller can't see are excluded). Blocked for guests -- unlike the other three exports, which have no role gate at all (a pre-existing gap the plan flags), this one and projects.csv now require write access. `value` column is blank without view_financials.")
 def export_deals(db: Session = Depends(get_db), user: User = Depends(require_write)):
+    can_see_money = can_view_financials(db, user)
     rows = [{
-        "title": d.title, "value": d.value, "currency": d.currency,
+        "title": d.title, "value": d.value if can_see_money else "", "currency": d.currency,
         "stage": d.stage, "probability": d.probability,
     } for d in db.query(Deal).filter(visibility_filter(db, Deal, "deal", user)).all()]
     return _csv_response(rows,
@@ -65,11 +67,12 @@ def export_deals(db: Session = Depends(get_db), user: User = Depends(require_wri
 
 
 @router.get("/export/projects.csv", summary="Export projects as CSV",
-           description="Download visibility-scoped projects as a CSV file (private ones the caller can't see are excluded). Blocked for guests, same as deals.csv.")
+           description="Download visibility-scoped projects as a CSV file (private ones the caller can't see are excluded). Blocked for guests, same as deals.csv. `budget` column is blank without view_financials.")
 def export_projects(db: Session = Depends(get_db), user: User = Depends(require_write)):
+    can_see_money = can_view_financials(db, user)
     rows = [{
         "name": p.name, "status": p.status, "priority": p.priority,
-        "budget": p.budget, "estimated_hours": p.estimated_hours,
+        "budget": p.budget if can_see_money else "", "estimated_hours": p.estimated_hours,
     } for p in db.query(Project).filter(visibility_filter(db, Project, "project", user)).all()]
     return _csv_response(rows,
         ["name", "status", "priority", "budget", "estimated_hours"], "projects.csv")
