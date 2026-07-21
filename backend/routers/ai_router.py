@@ -7,6 +7,8 @@ from schemas import AICommandRequest
 from auth import get_current_user, require_write
 from ai_service import get_openrouter_key, get_model, run_ai_command
 from utils import log_event
+from capabilities import has_capability, get_default_visibility
+from membership import add_member
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -69,9 +71,12 @@ def _execute(action: str, data: dict, db: Session, user: User):
             currency=data.get("currency", "EUR"),
             stage=stage,
             owner_id=user.id,
+            visibility=get_default_visibility(db),
         )
         db.add(obj); db.commit(); db.refresh(obj)
-        log_event(db, "deal", obj.id, "created", user); db.commit()
+        log_event(db, "deal", obj.id, "created", user)
+        add_member(db, "deal", obj.id, user.id, added_by=user)
+        db.commit()
         created = {"type": "deal", "id": obj.id, "name": obj.title}
     elif action == "create_project":
         status = data.get("status", "planning")
@@ -86,9 +91,12 @@ def _execute(action: str, data: dict, db: Session, user: User):
             status=status,
             priority=priority,
             owner_id=user.id,
+            visibility=get_default_visibility(db),
         )
         db.add(obj); db.commit(); db.refresh(obj)
-        log_event(db, "project", obj.id, "created", user); db.commit()
+        log_event(db, "project", obj.id, "created", user)
+        add_member(db, "project", obj.id, user.id, added_by=user)
+        db.commit()
         created = {"type": "project", "id": obj.id, "name": obj.name}
     elif action == "create_activity":
         atype = data.get("type", "task")
@@ -106,8 +114,11 @@ def _execute(action: str, data: dict, db: Session, user: User):
     return created
 
 
+CAPABILITY_BY_ACTION = {"create_deal": "manage_deals", "create_project": "manage_projects"}
+
+
 @router.post("/command", summary="Run an AI command",
-            description="Send free-form text to the configured OpenRouter model, which returns a structured {action, data, message}. Enum fields in `data` are re-validated server-side before any write (never trusted from the LLM). Write actions (create_*) are blocked for guests.")
+            description="Send free-form text to the configured OpenRouter model, which returns a structured {action, data, message}. Enum fields in `data` are re-validated server-side before any write (never trusted from the LLM). Write actions (create_*) are blocked for guests; create_deal/create_project additionally require manage_deals/manage_projects, same as the direct API -- the capability matrix is the deciding layer regardless of which surface triggers the write.")
 async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     api_key = get_openrouter_key(db)
@@ -130,6 +141,9 @@ async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
     if action in write_actions:
         if user.role == "guest":
             raise HTTPException(status_code=403, detail="Guests have read-only access")
+        required_cap = CAPABILITY_BY_ACTION.get(action)
+        if required_cap and not has_capability(db, user.role, required_cap):
+            raise HTTPException(status_code=403, detail=f"Missing capability: {required_cap}")
         created = _execute(action, data, db, user)
 
     log = AICommandLog(user_id=user.id, command=payload.command, action=action,
