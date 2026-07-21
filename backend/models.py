@@ -84,6 +84,10 @@ class Deal(Base):
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(String, nullable=True)  # inbound, outreach, referral, other
+    last_contact_at = Column(DateTime(timezone=True), nullable=True)
+    ball_in_court = Column(String, nullable=True)  # us, them, none
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
