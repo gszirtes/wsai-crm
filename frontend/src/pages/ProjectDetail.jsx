@@ -5,6 +5,7 @@ import { ArrowLeft, Clock, Plus, Trash2, Activity as ActIcon, Building2, User } 
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Field, Badge, Spinner, Modal } from "../components/common";
+import VisibilityMembers from "../components/VisibilityMembers";
 
 function Bar({ value, max, color = "bg-primary" }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -135,6 +136,9 @@ export default function ProjectDetail() {
           </div>
         )}
       </div>
+
+      <VisibilityMembers entityType="project" entityId={id} visibility={p.visibility} ownerId={p.owner_id}
+        writable={writable} onVisibilityChange={load} />
 
       <Modal open={modal} onClose={() => setModal(false)} title={t("time.logHours")}
         footer={<>

@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, User
-from schemas import DealCreate, DealOut, StageUpdate, ActivityOut
+from schemas import DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd, ActivityOut
 from auth import get_current_user, require_capability
 from utils import log_event
+from capabilities import get_default_visibility
+from membership import add_member, remove_member, list_members
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -55,10 +57,11 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
             summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
-    d = Deal(**payload.model_dump(), owner_id=user.id)
+    d = Deal(**payload.model_dump(), owner_id=user.id, visibility=get_default_visibility(db))
     db.add(d)
     db.flush()
     log_event(db, "deal", d.id, "created", user)
+    add_member(db, "deal", d.id, user.id, added_by=user)
     db.commit()
     db.refresh(d)
     return d
@@ -96,6 +99,65 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
     db.commit()
     db.refresh(d)
     return d
+
+
+@router.patch("/{deal_id}/visibility", response_model=DealOut,
+             summary="Change deal visibility", description="Set public/private. A separate capability (set_visibility) from manage_deals, so a role that can write deals doesn't automatically get to change who can see one. Logs a visibility_changed event.")
+def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Depends(get_db),
+                      user: User = Depends(require_capability("set_visibility"))):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    old_visibility = d.visibility
+    d.visibility = payload.visibility
+    if d.visibility != old_visibility:
+        log_event(db, "deal", d.id, "visibility_changed", user, from_value=old_visibility, to_value=d.visibility)
+    db.commit()
+    db.refresh(d)
+    return d
+
+
+@router.get("/{deal_id}/members",
+           summary="List deal members", description="Members of a deal (the owner is auto-included from creation). Membership only matters for `private` deals -- on a `public` deal it's informational.")
+def list_deal_members(deal_id: str, db: Session = Depends(get_db),
+                      _: User = Depends(get_current_user)):
+    if not db.query(Deal).filter(Deal.id == deal_id).first():
+        raise HTTPException(status_code=404, detail="Deal not found")
+    rows = list_members(db, "deal", deal_id)
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([m.user_id for m in rows])).all()}
+    return [{
+        "user_id": m.user_id,
+        "name": users[m.user_id].name if m.user_id in users else None,
+        "email": users[m.user_id].email if m.user_id in users else None,
+        "added_by": m.added_by, "added_at": m.added_at,
+    } for m in rows]
+
+
+@router.post("/{deal_id}/members",
+            summary="Invite a member", description="Add a user as a member of this deal, granting them access if it's `private`. Requires invite_members.")
+def add_deal_member(deal_id: str, payload: MemberAdd, db: Session = Depends(get_db),
+                    user: User = Depends(require_capability("invite_members"))):
+    if not db.query(Deal).filter(Deal.id == deal_id).first():
+        raise HTTPException(status_code=404, detail="Deal not found")
+    if not db.query(User).filter(User.id == payload.user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    add_member(db, "deal", deal_id, payload.user_id, added_by=user)
+    db.commit()
+    return {"success": True}
+
+
+@router.delete("/{deal_id}/members/{user_id}",
+              summary="Remove a member", description="Requires invite_members. The deal's owner cannot be removed from membership.")
+def remove_deal_member(deal_id: str, user_id: str, db: Session = Depends(get_db),
+                       user: User = Depends(require_capability("invite_members"))):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    if d.owner_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the owner from membership")
+    remove_member(db, "deal", deal_id, user_id)
+    db.commit()
+    return {"success": True}
 
 
 @router.delete("/{deal_id}",

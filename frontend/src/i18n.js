@@ -159,6 +159,9 @@ const en = {
       set_visibility: "Change a deal/project's visibility",
       reassign_owner: "Reassign a deal/project's owner",
       view_all_reports: "View aggregated reports (not just their own)",
+      defaultVisibility: "Default visibility for new deals/projects",
+      public: "Public (visible to everyone)",
+      private: "Private (invite-only)",
     },
     settings: {
       title: "Settings",
@@ -202,6 +205,11 @@ const en = {
       noItems: "Nothing here yet",
     },
     calendar: { title: "Calendar", today: "Today", noTasks: "No tasks this day" },
+    members: {
+      title: "Access", public: "Public", private: "Private",
+      makePublic: "Make public", makePrivate: "Make private",
+      owner: "owner", pick: "Choose a teammate…", invite: "Invite",
+    },
     io: {
       export: "Export CSV", import: "Import CSV", importContacts: "Import contacts",
       chooseFile: "Choose a .csv file", importDone: "contacts imported", errors: "errors",
@@ -388,6 +396,9 @@ const hu = {
       set_visibility: "Deal/projekt láthatóságának módosítása",
       reassign_owner: "Deal/projekt felelősének átállítása",
       view_all_reports: "Összesített riportok megtekintése (nem csak a sajátja)",
+      defaultVisibility: "Új dealek/projektek alap láthatósága",
+      public: "Nyilvános (mindenki látja)",
+      private: "Privát (csak meghívottak)",
     },
     settings: {
       title: "Beállítások",
@@ -431,6 +442,11 @@ const hu = {
       noItems: "Itt még nincs semmi",
     },
     calendar: { title: "Naptár", today: "Ma", noTasks: "Nincs feladat ezen a napon" },
+    members: {
+      title: "Hozzáférés", public: "Nyilvános", private: "Privát",
+      makePublic: "Nyilvánossá tétel", makePrivate: "Privátra állítás",
+      owner: "felelős", pick: "Válassz csapattagot…", invite: "Meghívás",
+    },
     io: {
       export: "CSV export", import: "CSV import", importContacts: "Kapcsolatok importálása",
       chooseFile: "Válassz .csv fájlt", importDone: "kapcsolat importálva", errors: "hiba",

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer, Index
+    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -79,6 +80,7 @@ class Deal(Base):
     probability = Column(Integer, default=10)
     expected_close = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    visibility = Column(String, nullable=False, default="public", server_default="public")  # public, private
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -99,6 +101,7 @@ class Project(Base):
     currency = Column(String, default="EUR")
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
+    visibility = Column(String, nullable=False, default="public", server_default="public")  # public, private
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -174,6 +177,26 @@ class EventLog(Base):
 
     __table_args__ = (
         Index("ix_event_logs_entity_type_entity_id_created_at", "entity_type", "entity_id", "created_at"),
+    )
+
+
+class EntityMembership(Base):
+    """Generic membership/invite table (Phase 1 access control) -- who can see
+    a `private` Deal/Project beyond its owner. Same entity_type+entity_id
+    pattern as EventLog, for the same reason: one table reused across
+    entities instead of a membership table per entity type.
+    """
+    __tablename__ = "entity_memberships"
+    id = Column(String, primary_key=True, default=gen_id)
+    entity_type = Column(String, nullable=False, index=True)  # deal, project
+    entity_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    added_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    added_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("entity_type", "entity_id", "user_id", name="uq_entity_membership"),
+        Index("ix_entity_memberships_entity_type_entity_id", "entity_type", "entity_id"),
     )
 
 

@@ -5,32 +5,37 @@ from models import User
 from schemas import SettingUpdate, CapabilityMatrix
 from auth import require_role
 from ai_service import get_setting, set_setting, encrypt_value, get_model
-from capabilities import get_capability_matrix, set_capability_matrix
+from capabilities import (get_capability_matrix, set_capability_matrix,
+                          get_default_visibility, set_default_visibility)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
-@router.get("", summary="Get AI settings",
-           description="Whether an OpenRouter API key is configured (never returns the key itself) and the current model. Admin only.")
+@router.get("", summary="Get settings",
+           description="Whether an OpenRouter API key is configured (never returns the key itself), the current AI model, and the org-wide default visibility for new deals/projects. Admin only.")
 def get_settings(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
     key = get_setting(db, "openrouter_api_key")
     return {
         "openrouter_configured": bool(key),
         "openrouter_model": get_model(db),
+        "default_visibility": get_default_visibility(db),
     }
 
 
-@router.put("", summary="Update AI settings",
-           description="Set the OpenRouter API key (stored Fernet-encrypted) and/or model. Admin only.")
+@router.put("", summary="Update settings",
+           description="Set the OpenRouter API key (stored Fernet-encrypted), model, and/or the org-wide default visibility for new deals/projects (D5). Admin only.")
 def update_settings(payload: SettingUpdate, db: Session = Depends(get_db),
                     _: User = Depends(require_role("admin"))):
     if payload.openrouter_api_key:
         set_setting(db, "openrouter_api_key", encrypt_value(payload.openrouter_api_key))
     if payload.openrouter_model:
         set_setting(db, "openrouter_model", payload.openrouter_model)
+    if payload.default_visibility:
+        set_default_visibility(db, payload.default_visibility)
     return {
         "openrouter_configured": bool(get_setting(db, "openrouter_api_key")),
         "openrouter_model": get_model(db),
+        "default_visibility": get_default_visibility(db),
     }
 
 

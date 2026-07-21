@@ -10,6 +10,7 @@ ActivityType = Literal["call", "email", "meeting", "task", "note"]
 ActivityDirection = Literal["inbound", "outbound", "internal"]
 ProjectPriority = Literal["low", "medium", "high"]
 UserRole = Literal["admin", "manager", "user", "guest"]
+Visibility = Literal["public", "private"]
 
 
 # ---------- Auth ----------
@@ -121,6 +122,7 @@ class DealCreate(DealBase):
 class DealOut(DealBase):
     id: str
     owner_id: Optional[str] = None
+    visibility: Visibility = "public"
     created_at: Optional[datetime] = None
 
     class Config:
@@ -129,6 +131,22 @@ class DealOut(DealBase):
 
 class StageUpdate(BaseModel):
     stage: DealStage
+
+
+class VisibilityUpdate(BaseModel):
+    visibility: Visibility
+
+
+class MemberAdd(BaseModel):
+    user_id: str
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    added_by: Optional[str] = None
+    added_at: Optional[datetime] = None
 
 
 # ---------- Project ----------
@@ -154,6 +172,7 @@ class ProjectCreate(ProjectBase):
 class ProjectOut(ProjectBase):
     id: str
     owner_id: Optional[str] = None
+    visibility: Visibility = "public"
     created_at: Optional[datetime] = None
     logged_hours: Optional[float] = 0
     health: Optional[str] = None
@@ -219,6 +238,7 @@ class AICommandRequest(BaseModel):
 class SettingUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     openrouter_model: Optional[str] = None
+    default_visibility: Optional[Visibility] = None
 
 
 # ---------- Capability matrix (Phase 1 access control) ----------

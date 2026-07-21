@@ -148,3 +148,150 @@ class TestCapabilityMatrix:
             assert r.status_code == 200, r.text
         finally:
             admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
+
+
+class TestVisibility:
+    def test_new_deal_defaults_to_public(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 vis deal"})
+        assert r.status_code == 200, r.text
+        assert r.json()["visibility"] == "public"
+        admin_client.delete(f"{base_url}/api/deals/{r.json()['id']}")
+
+    def test_new_project_defaults_to_public(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/projects", json={"name": "TEST_p1 vis project"})
+        assert r.status_code == 200, r.text
+        assert r.json()["visibility"] == "public"
+        admin_client.delete(f"{base_url}/api/projects/{r.json()['id']}")
+
+    def test_org_default_visibility_setting(self, admin_client, base_url):
+        original = admin_client.get(f"{base_url}/api/settings").json()["default_visibility"]
+        try:
+            pr = admin_client.put(f"{base_url}/api/settings", json={"default_visibility": "private"})
+            assert pr.status_code == 200, pr.text
+            assert pr.json()["default_visibility"] == "private"
+            r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 default private"})
+            assert r.json()["visibility"] == "private"
+            admin_client.delete(f"{base_url}/api/deals/{r.json()['id']}")
+        finally:
+            admin_client.put(f"{base_url}/api/settings", json={"default_visibility": original})
+
+    def test_patch_visibility_logs_event_and_persists(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 patch vis"})
+        deal_id = r.json()["id"]
+        try:
+            pr = admin_client.patch(f"{base_url}/api/deals/{deal_id}/visibility", json={"visibility": "private"})
+            assert pr.status_code == 200, pr.text
+            assert pr.json()["visibility"] == "private"
+            events = _events(admin_client, base_url, "deal", deal_id)
+            vis_events = [e for e in events if e["event_type"] == "visibility_changed"]
+            assert len(vis_events) == 1
+            assert vis_events[0]["from_value"] == "public"
+            assert vis_events[0]["to_value"] == "private"
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_patch_visibility_invalid_value_rejected(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 bad vis"})
+        deal_id = r.json()["id"]
+        try:
+            pr = admin_client.patch(f"{base_url}/api/deals/{deal_id}/visibility", json={"visibility": "hidden"})
+            assert pr.status_code == 422
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_guest_cannot_change_visibility(self, admin_client, guest_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 guest vis"})
+        deal_id = r.json()["id"]
+        try:
+            pr = guest_client.patch(f"{base_url}/api/deals/{deal_id}/visibility", json={"visibility": "private"})
+            assert pr.status_code == 403
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_put_deal_cannot_silently_change_visibility(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 put vis"})
+        deal_id = r.json()["id"]
+        try:
+            ur = admin_client.put(f"{base_url}/api/deals/{deal_id}", json={
+                "title": "TEST_p1 put vis", "visibility": "private",
+            })
+            assert ur.status_code == 200, ur.text
+            assert ur.json()["visibility"] == "public", "PUT must not be able to change visibility"
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+
+class TestEntityMembership:
+    def _other_user_id(self, admin_client, base_url, email):
+        r = admin_client.get(f"{base_url}/api/users/directory")
+        assert r.status_code == 200, r.text
+        match = [u for u in r.json() if u["email"] == email]
+        assert match, f"seeded user {email} not found in directory"
+        return match[0]["id"]
+
+    def test_owner_auto_member_on_create(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 auto member"})
+        deal_id = r.json()["id"]
+        owner_id = r.json()["owner_id"]
+        try:
+            mr = admin_client.get(f"{base_url}/api/deals/{deal_id}/members")
+            assert mr.status_code == 200, mr.text
+            assert [m for m in mr.json() if m["user_id"] == owner_id]
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_directory_available_to_non_admin(self, user_client, base_url):
+        r = user_client.get(f"{base_url}/api/users/directory")
+        assert r.status_code == 200, r.text
+        assert isinstance(r.json(), list)
+        assert "role" not in r.json()[0]
+
+    def test_invite_and_remove_project_member(self, admin_client, base_url):
+        user_id = self._other_user_id(admin_client, base_url, "manager@wespeak.ai")
+        r = admin_client.post(f"{base_url}/api/projects", json={"name": "TEST_p1 invite project"})
+        project_id = r.json()["id"]
+        try:
+            ir = admin_client.post(f"{base_url}/api/projects/{project_id}/members", json={"user_id": user_id})
+            assert ir.status_code == 200, ir.text
+            mr = admin_client.get(f"{base_url}/api/projects/{project_id}/members").json()
+            assert [m for m in mr if m["user_id"] == user_id]
+
+            dr = admin_client.delete(f"{base_url}/api/projects/{project_id}/members/{user_id}")
+            assert dr.status_code == 200, dr.text
+            mr2 = admin_client.get(f"{base_url}/api/projects/{project_id}/members").json()
+            assert not [m for m in mr2 if m["user_id"] == user_id]
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_cannot_remove_owner_from_membership(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 owner protect"})
+        deal_id = r.json()["id"]
+        owner_id = r.json()["owner_id"]
+        try:
+            dr = admin_client.delete(f"{base_url}/api/deals/{deal_id}/members/{owner_id}")
+            assert dr.status_code == 400
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_invite_requires_invite_members_capability(self, admin_client, user_client, base_url):
+        user_id = self._other_user_id(admin_client, base_url, "guest@wespeak.ai")
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 cap gate"})
+        deal_id = r.json()["id"]
+        original = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        try:
+            revoked = {**original, "user": {**original["user"], "invite_members": False}}
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=revoked)
+            ir = user_client.post(f"{base_url}/api/deals/{deal_id}/members", json={"user_id": user_id})
+            assert ir.status_code == 403
+        finally:
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_invite_nonexistent_user_404(self, admin_client, base_url):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 bad invite"})
+        deal_id = r.json()["id"]
+        try:
+            ir = admin_client.post(f"{base_url}/api/deals/{deal_id}/members", json={"user_id": "does-not-exist"})
+            assert ir.status_code == 404
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")

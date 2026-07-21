@@ -68,6 +68,13 @@ def delete_user(user_id: str, db: Session = Depends(get_db),
     return {"success": True}
 
 
+@router.get("/directory", summary="List users for a teammate picker",
+           description="Minimal id/name/email/active for every user, available to any authenticated user (not admin-only like GET /api/users, which returns full profiles including role/auth_provider) -- just enough to populate an invite-a-member picker.")
+def list_directory(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return [{"id": u.id, "name": u.name, "email": u.email, "active": u.active}
+            for u in db.query(User).order_by(User.name).all()]
+
+
 @router.put("/me/locale", response_model=UserOut,
            summary="Update own locale", description="Set the current user's UI language (en/hu). Any authenticated user.")
 def update_my_locale(payload: LocaleUpdate, db: Session = Depends(get_db),

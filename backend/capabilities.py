@@ -65,3 +65,17 @@ def set_capability_matrix(db: Session, matrix: dict):
 
 def has_capability(db: Session, role: str, capability: str) -> bool:
     return bool(get_capability_matrix(db).get(role, {}).get(capability, False))
+
+
+# ---------- Object visibility default (D5) ----------
+DEFAULT_VISIBILITY_KEY = "default_visibility"
+
+
+def get_default_visibility(db: Session) -> str:
+    """Org-wide default for new Deal/Project.visibility (D5: public unless
+    the admin has changed it)."""
+    return get_setting(db, DEFAULT_VISIBILITY_KEY) or "public"
+
+
+def set_default_visibility(db: Session, value: str):
+    set_setting(db, DEFAULT_VISIBILITY_KEY, value)

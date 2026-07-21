@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState(null);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(MODELS[0]);
+  const [defaultVisibility, setDefaultVisibility] = useState("public");
   const [saved, setSaved] = useState(false);
   const [capabilities, setCapabilities] = useState(null);
   const [capsSaved, setCapsSaved] = useState(false);
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     api.get("/settings").then((r) => {
       setSettings(r.data);
       setModel(r.data.openrouter_model || MODELS[0]);
+      setDefaultVisibility(r.data.default_visibility || "public");
     });
     api.get("/settings/capabilities").then((r) => setCapabilities(r.data));
   }, []);
@@ -57,6 +59,12 @@ export default function SettingsPage() {
     setCapabilities(r.data);
     setCapsSaved(true);
     setTimeout(() => setCapsSaved(false), 2000);
+  };
+
+  const saveDefaultVisibility = async (value) => {
+    setDefaultVisibility(value);
+    const r = await api.put("/settings", { default_visibility: value });
+    setSettings(r.data);
   };
 
   return (
@@ -105,6 +113,15 @@ export default function SettingsPage() {
             <h3 className="font-display font-bold">{t("capabilities.title")}</h3>
             <p className="text-sm text-muted">{t("capabilities.desc")}</p>
           </div>
+        </div>
+        <div className="mt-5 max-w-xs">
+          <Field label={t("capabilities.defaultVisibility")}>
+            <Select data-testid="default-visibility-select" value={defaultVisibility}
+              onChange={(e) => saveDefaultVisibility(e.target.value)}>
+              <option value="public">{t("capabilities.public")}</option>
+              <option value="private">{t("capabilities.private")}</option>
+            </Select>
+          </Field>
         </div>
         {capabilities && (
           <div className="mt-5 overflow-x-auto">

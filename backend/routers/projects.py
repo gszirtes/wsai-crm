@@ -5,9 +5,11 @@ from sqlalchemy import func
 from database import get_db
 from models import Project, TimeEntry, Activity, Company, Contact, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
-                     ActivityOut)
+                     ActivityOut, VisibilityUpdate, MemberAdd)
 from auth import get_current_user, require_write, require_capability
 from utils import logged_hours_for, log_event
+from capabilities import get_default_visibility
+from membership import add_member, remove_member, list_members
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -111,10 +113,11 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
             summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_capability("manage_projects"))):
-    p = Project(**payload.model_dump(), owner_id=user.id)
+    p = Project(**payload.model_dump(), owner_id=user.id, visibility=get_default_visibility(db))
     db.add(p)
     db.flush()
     log_event(db, "project", p.id, "created", user)
+    add_member(db, "project", p.id, user.id, added_by=user)
     db.commit()
     db.refresh(p)
     return to_out(db, p)
@@ -135,6 +138,65 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
     db.commit()
     db.refresh(p)
     return to_out(db, p)
+
+
+@router.patch("/{project_id}/visibility", response_model=ProjectOut,
+             summary="Change project visibility", description="Set public/private. A separate capability (set_visibility) from manage_projects. Logs a visibility_changed event.")
+def update_visibility(project_id: str, payload: VisibilityUpdate, db: Session = Depends(get_db),
+                      user: User = Depends(require_capability("set_visibility"))):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    old_visibility = p.visibility
+    p.visibility = payload.visibility
+    if p.visibility != old_visibility:
+        log_event(db, "project", p.id, "visibility_changed", user, from_value=old_visibility, to_value=p.visibility)
+    db.commit()
+    db.refresh(p)
+    return to_out(db, p)
+
+
+@router.get("/{project_id}/members",
+           summary="List project members", description="Members of a project (the owner is auto-included from creation). Membership only matters for `private` projects.")
+def list_project_members(project_id: str, db: Session = Depends(get_db),
+                         _: User = Depends(get_current_user)):
+    if not db.query(Project).filter(Project.id == project_id).first():
+        raise HTTPException(status_code=404, detail="Project not found")
+    rows = list_members(db, "project", project_id)
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([m.user_id for m in rows])).all()}
+    return [{
+        "user_id": m.user_id,
+        "name": users[m.user_id].name if m.user_id in users else None,
+        "email": users[m.user_id].email if m.user_id in users else None,
+        "added_by": m.added_by, "added_at": m.added_at,
+    } for m in rows]
+
+
+@router.post("/{project_id}/members",
+            summary="Invite a member", description="Add a user as a member of this project, granting them access if it's `private`. Requires invite_members.")
+def add_project_member(project_id: str, payload: MemberAdd, db: Session = Depends(get_db),
+                       user: User = Depends(require_capability("invite_members"))):
+    if not db.query(Project).filter(Project.id == project_id).first():
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not db.query(User).filter(User.id == payload.user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    add_member(db, "project", project_id, payload.user_id, added_by=user)
+    db.commit()
+    return {"success": True}
+
+
+@router.delete("/{project_id}/members/{user_id}",
+              summary="Remove a member", description="Requires invite_members. The project's owner cannot be removed from membership.")
+def remove_project_member(project_id: str, user_id: str, db: Session = Depends(get_db),
+                          user: User = Depends(require_capability("invite_members"))):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if p.owner_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the owner from membership")
+    remove_member(db, "project", project_id, user_id)
+    db.commit()
+    return {"success": True}
 
 
 @router.delete("/{project_id}",

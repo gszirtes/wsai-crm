@@ -5,6 +5,7 @@ import { ArrowLeft, Building2, User, Activity as ActIcon, Plus } from "lucide-re
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
+import VisibilityMembers from "../components/VisibilityMembers";
 
 const TYPES = ["call", "email", "meeting", "task", "note"];
 const emptyActivity = { type: "call", direction: "", subject: "", description: "" };
@@ -90,6 +91,9 @@ export default function DealDetail() {
           </div>
         )}
       </div>
+
+      <VisibilityMembers entityType="deal" entityId={id} visibility={d.visibility} ownerId={d.owner_id}
+        writable={writable} onVisibilityChange={load} />
 
       <Modal open={modal} onClose={() => setModal(false)} title={t("activity.logActivity")}
         footer={<>
