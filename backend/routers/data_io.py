@@ -2,7 +2,7 @@ import csv
 import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Contact, Company, Deal, Project, User
 from auth import get_current_user, require_write
@@ -14,13 +14,25 @@ router = APIRouter(prefix="/api", tags=["data"])
 
 VALID_CONTACT_STATUSES = {"lead", "prospect", "customer", "inactive"}
 
+_FORMULA_LEAD_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Neutralize CSV/spreadsheet formula injection (CWE-1236): a cell whose
+    first character is =/+/-/@ (or a leading tab/CR) is interpreted as a
+    formula by Excel/Sheets when the export is opened there. Prefixing with
+    a single quote forces it to be read as literal text instead."""
+    if isinstance(value, str) and value.startswith(_FORMULA_LEAD_CHARS):
+        return "'" + value
+    return value
+
 
 def _csv_response(rows, fieldnames, filename):
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     for r in rows:
-        writer.writerow(r)
+        writer.writerow({k: _csv_safe(v) for k, v in r.items()})
     buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
@@ -32,7 +44,7 @@ def _csv_response(rows, fieldnames, filename):
 @router.get("/export/contacts.csv", summary="Export contacts as CSV", description="Download all contacts as a CSV file. Any authenticated user, including guests -- there is no admin/manager gate on bulk export.")
 def export_contacts(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = []
-    for c in db.query(Contact).all():
+    for c in db.query(Contact).options(joinedload(Contact.company)).all():
         rows.append({
             "first_name": c.first_name, "last_name": c.last_name, "email": c.email,
             "phone": c.phone, "title": c.title, "status": c.status,
@@ -113,8 +125,8 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
             company_id = companies.get(cname.lower())
             if not company_id:
                 comp = Company(name=cname, owner_id=owner_id_for(user))
-                db.add(comp); db.commit(); db.refresh(comp)
-                log_event(db, "company", comp.id, "created", user); db.commit()
+                db.add(comp); db.flush()
+                log_event(db, "company", comp.id, "created", user)
                 companies[cname.lower()] = comp.id
                 company_id = comp.id
         c = Contact(
