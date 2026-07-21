@@ -4,33 +4,44 @@ from sqlalchemy import func
 from database import get_db
 from models import Contact, Company, Deal, Project, Activity, User
 from auth import get_current_user
+from visibility import visibility_filter
+from financials import can_view_financials
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-@router.get("/stats")
-def stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+@router.get("/stats", summary="Get dashboard KPIs",
+           description="Aggregate counts/sums across all contacts, companies, deals, projects, and open tasks, plus breakdowns by deal stage, contact status, and project status. All deal/project figures are visibility-scoped (private ones the caller can't see are excluded); contacts/companies/activities are not visibility-scoped. pipeline_value/won_value/deals_by_stage[].value are null without view_financials (this doesn't bypass the schema layer like *Out does, so it's masked explicitly here).")
+def stats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    deal_vis = visibility_filter(db, Deal, "deal", user)
+    project_vis = visibility_filter(db, Project, "project", user)
+
     total_contacts = db.query(func.count(Contact.id)).scalar()
     total_companies = db.query(func.count(Company.id)).scalar()
-    active_projects = db.query(func.count(Project.id)).filter(Project.status == "active").scalar()
-    open_deals = db.query(func.count(Deal.id)).filter(~Deal.stage.in_(["won", "lost"])).scalar()
+    active_projects = db.query(func.count(Project.id)).filter(
+        Project.status == "active", project_vis).scalar()
+    open_deals = db.query(func.count(Deal.id)).filter(
+        ~Deal.stage.in_(["won", "lost"]), deal_vis).scalar()
 
     pipeline_value = db.query(func.coalesce(func.sum(Deal.value), 0)).filter(
-        ~Deal.stage.in_(["won", "lost"])).scalar()
+        ~Deal.stage.in_(["won", "lost"]), deal_vis).scalar()
     won_value = db.query(func.coalesce(func.sum(Deal.value), 0)).filter(
-        Deal.stage == "won").scalar()
+        Deal.stage == "won", deal_vis).scalar()
+
+    can_see_money = can_view_financials(db, user)
 
     # deals by stage
     stage_rows = db.query(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.value), 0)) \
-        .group_by(Deal.stage).all()
-    deals_by_stage = [{"stage": s, "count": c, "value": float(v)} for s, c, v in stage_rows]
+        .filter(deal_vis).group_by(Deal.stage).all()
+    deals_by_stage = [{"stage": s, "count": c, "value": float(v) if can_see_money else None} for s, c, v in stage_rows]
 
     # contacts by status
     status_rows = db.query(Contact.status, func.count(Contact.id)).group_by(Contact.status).all()
     contacts_by_status = [{"status": s, "count": c} for s, c in status_rows]
 
     # projects by status
-    proj_rows = db.query(Project.status, func.count(Project.id)).group_by(Project.status).all()
+    proj_rows = db.query(Project.status, func.count(Project.id)).filter(project_vis) \
+        .group_by(Project.status).all()
     projects_by_status = [{"status": s, "count": c} for s, c in proj_rows]
 
     open_tasks = db.query(func.count(Activity.id)).filter(Activity.completed == False).scalar()
@@ -40,8 +51,8 @@ def stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
         "total_companies": total_companies,
         "active_projects": active_projects,
         "open_deals": open_deals,
-        "pipeline_value": float(pipeline_value),
-        "won_value": float(won_value),
+        "pipeline_value": float(pipeline_value) if can_see_money else None,
+        "won_value": float(won_value) if can_see_money else None,
         "open_tasks": open_tasks,
         "deals_by_stage": deals_by_stage,
         "contacts_by_status": contacts_by_status,

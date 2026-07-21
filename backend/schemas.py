@@ -7,6 +7,10 @@ DealStage = Literal["lead", "qualified", "proposal", "negotiation", "won", "lost
 ContactStatus = Literal["lead", "prospect", "customer", "inactive"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed", "cancelled"]
 ActivityType = Literal["call", "email", "meeting", "task", "note"]
+ActivityDirection = Literal["inbound", "outbound", "internal"]
+ProjectPriority = Literal["low", "medium", "high"]
+UserRole = Literal["admin", "manager", "user", "guest"]
+Visibility = Literal["public", "private"]
 
 
 # ---------- Auth ----------
@@ -14,7 +18,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str
-    role: Optional[str] = "user"
+    role: Optional[UserRole] = "user"
 
 
 class LoginRequest(BaseModel):
@@ -26,7 +30,7 @@ class UserOut(BaseModel):
     id: str
     email: str
     name: str
-    role: str
+    role: UserRole
     avatar_url: Optional[str] = None
     locale: str = "en"
     auth_provider: str = "local"
@@ -40,7 +44,7 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[UserRole] = None
     locale: Optional[str] = None
     active: Optional[bool] = None
     password: Optional[str] = None
@@ -118,6 +122,7 @@ class DealCreate(DealBase):
 class DealOut(DealBase):
     id: str
     owner_id: Optional[str] = None
+    visibility: Visibility = "public"
     created_at: Optional[datetime] = None
 
     class Config:
@@ -128,12 +133,28 @@ class StageUpdate(BaseModel):
     stage: DealStage
 
 
+class VisibilityUpdate(BaseModel):
+    visibility: Visibility
+
+
+class MemberAdd(BaseModel):
+    user_id: str
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    added_by: Optional[str] = None
+    added_at: Optional[datetime] = None
+
+
 # ---------- Project ----------
 class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
     status: Optional[ProjectStatus] = "planning"
-    priority: Optional[str] = "medium"
+    priority: Optional[ProjectPriority] = "medium"
     budget: Optional[float] = 0
     estimated_hours: Optional[float] = 0
     hourly_rate: Optional[float] = 0
@@ -151,6 +172,7 @@ class ProjectCreate(ProjectBase):
 class ProjectOut(ProjectBase):
     id: str
     owner_id: Optional[str] = None
+    visibility: Visibility = "public"
     created_at: Optional[datetime] = None
     logged_hours: Optional[float] = 0
     health: Optional[str] = None
@@ -184,6 +206,7 @@ class TimeEntryOut(BaseModel):
 # ---------- Activity ----------
 class ActivityBase(BaseModel):
     type: Optional[ActivityType] = "task"
+    direction: Optional[ActivityDirection] = None
     subject: str
     description: Optional[str] = None
     due_date: Optional[datetime] = None
@@ -215,7 +238,53 @@ class AICommandRequest(BaseModel):
 class SettingUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     openrouter_model: Optional[str] = None
+    default_visibility: Optional[Visibility] = None
+
+
+# ---------- Capability matrix (Phase 1 access control) ----------
+class RoleCapabilities(BaseModel):
+    view_financials: bool
+    manage_deals: bool
+    manage_projects: bool
+    invite_members: bool
+    set_visibility: bool
+    reassign_owner: bool
+    view_all_reports: bool
+
+
+class CapabilityMatrix(BaseModel):
+    admin: RoleCapabilities
+    manager: RoleCapabilities
+    user: RoleCapabilities
+    guest: RoleCapabilities
 
 
 class LocaleUpdate(BaseModel):
     locale: Literal["en", "hu"]
+
+
+# ---------- Service accounts (Phase 1 MCP-enabler) ----------
+class ServiceAccountCreate(BaseModel):
+    name: str
+    role: UserRole = "user"
+
+
+class ServiceAccountOut(BaseModel):
+    id: str
+    name: str
+    role: UserRole
+    active: bool
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ServiceAccountCreated(ServiceAccountOut):
+    api_key: str  # plaintext, present only in the create response -- never retrievable again
+
+
+class ServiceAccountUpdate(BaseModel):
+    role: Optional[UserRole] = None
+    active: Optional[bool] = None

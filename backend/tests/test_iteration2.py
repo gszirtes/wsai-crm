@@ -238,14 +238,17 @@ class TestNewEndpointRBAC:
         return r.json()[0]["id"]
 
     def test_guest_can_read_details_and_exports(self, guest_client, admin_client):
+        # Phase 1: deals.csv/projects.csv now require_write (closing the gap the
+        # discovery report flagged -- these had no role gate at all before).
         pid = self._get_seed_project_id(admin_client)
         for path in [f"/api/projects/{pid}/detail",
                      "/api/export/contacts.csv",
-                     "/api/export/companies.csv",
-                     "/api/export/deals.csv",
-                     "/api/export/projects.csv"]:
+                     "/api/export/companies.csv"]:
             r = guest_client.get(f"{BASE_URL}{path}", timeout=20)
             assert r.status_code == 200, f"guest GET {path} -> {r.status_code}"
+        for path in ["/api/export/deals.csv", "/api/export/projects.csv"]:
+            r = guest_client.get(f"{BASE_URL}{path}", timeout=20)
+            assert r.status_code == 403, f"guest GET {path} -> {r.status_code}"
 
     def test_guest_blocked_from_time_and_import(self, guest_client, admin_client):
         pid = self._get_seed_project_id(admin_client)

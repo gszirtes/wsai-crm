@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer
+    Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -79,6 +80,7 @@ class Deal(Base):
     probability = Column(Integer, default=10)
     expected_close = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    visibility = Column(String, nullable=False, default="public", server_default="public")  # public, private
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -99,6 +101,7 @@ class Project(Base):
     currency = Column(String, default="EUR")
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
+    visibility = Column(String, nullable=False, default="public", server_default="public")  # public, private
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -110,6 +113,7 @@ class Activity(Base):
     __tablename__ = "activities"
     id = Column(String, primary_key=True, default=gen_id)
     type = Column(String, default="task")  # call, email, meeting, task, note
+    direction = Column(String, nullable=True)  # inbound, outbound, internal, or NULL
     subject = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     due_date = Column(DateTime(timezone=True), nullable=True)
@@ -147,6 +151,55 @@ class Notification(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class EventLog(Base):
+    """Generic, append-only audit trail — never updated or deleted in place.
+
+    entity_id has no DB foreign key on purpose: entity_type varies row to row
+    (deal, project, activity, ...), so a single column can't point at a single
+    table. Integrity (that entity_id actually refers to a row of entity_type)
+    is the writer's responsibility (always go through log_event()), not the
+    DB's. Rows outlive their entity: a hard-deleted parent leaves its history
+    in place for audit purposes.
+    """
+    __tablename__ = "event_logs"
+    id = Column(String, primary_key=True, default=gen_id)
+    entity_type = Column(String, nullable=False, index=True)  # deal, project, activity, milestone, ...
+    entity_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)  # created, deleted, claimed, stage_changed, status_changed,
+                                                  # activity_logged, owner_changed, visibility_changed
+    from_value = Column(String, nullable=True)
+    to_value = Column(String, nullable=True)
+    actor_type = Column(String, nullable=False)  # user, service
+    actor_id = Column(String, nullable=True)
+    activity_id = Column(String, ForeignKey("activities.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_event_logs_entity_type_entity_id_created_at", "entity_type", "entity_id", "created_at"),
+    )
+
+
+class EntityMembership(Base):
+    """Generic membership/invite table (Phase 1 access control) -- who can see
+    a `private` Deal/Project beyond its owner. Same entity_type+entity_id
+    pattern as EventLog, for the same reason: one table reused across
+    entities instead of a membership table per entity type.
+    """
+    __tablename__ = "entity_memberships"
+    id = Column(String, primary_key=True, default=gen_id)
+    entity_type = Column(String, nullable=False, index=True)  # deal, project
+    entity_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    added_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    added_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("entity_type", "entity_id", "user_id", name="uq_entity_membership"),
+        Index("ix_entity_memberships_entity_type_entity_id", "entity_type", "entity_id"),
+    )
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
     key = Column(String, primary_key=True)
@@ -160,4 +213,25 @@ class AICommandLog(Base):
     command = Column(Text, nullable=False)
     action = Column(String, nullable=True)
     response = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class ServiceAccount(Base):
+    """API-key principal for machine/agent access (Phase 1 MCP-enabler --
+    the actual MCP server is Phase 6). Plugs into the exact same role +
+    capability model as a human User: `role` is checked by require_role/
+    require_capability/has_capability identically, since those only ever
+    read `.role` off whatever principal get_current_user() returned. Never
+    stores the raw key -- key_hash is a SHA-256 digest, looked up by exact
+    match (the key itself is a high-entropy random token, not a
+    user-chosen password, so bcrypt's slow-hash brute-force protection
+    isn't the relevant property here; fast, indexed exact-match lookup is).
+    """
+    __tablename__ = "service_accounts"
+    id = Column(String, primary_key=True, default=gen_id)
+    name = Column(String, nullable=False)
+    key_hash = Column(String, nullable=False, unique=True, index=True)
+    role = Column(String, nullable=False, default="user")  # admin, manager, user, guest -- same as User.role
+    active = Column(Boolean, default=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)

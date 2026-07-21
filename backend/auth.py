@@ -1,11 +1,14 @@
 import os
 import bcrypt
+import hashlib
+import secrets
 import jwt
 from datetime import datetime, timezone, timedelta
 from fastapi import Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User
+from models import User, ServiceAccount
+from capabilities import has_capability
 
 JWT_ALGORITHM = "HS256"
 
@@ -64,7 +67,40 @@ def _extract_token(request: Request):
     return token
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+API_KEY_PREFIX = "sk_"
+
+
+def generate_api_key() -> str:
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
+def hash_api_key(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _get_service_account(db: Session, api_key: str) -> ServiceAccount:
+    sa = db.query(ServiceAccount).filter(ServiceAccount.key_hash == hash_api_key(api_key)).first()
+    if not sa or not sa.active:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return sa
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Returns the current principal -- a `User` (cookie/bearer JWT) or a
+    `ServiceAccount` (X-API-Key header), whichever the request presents.
+    Every existing `Depends(get_current_user)` call site across the routers
+    keeps working unchanged: both types expose `.id`/`.role`/`.active`, the
+    only fields require_role/require_write/require_capability/log_event ever
+    read off this return value (verified: no router outside auth_router.py/
+    users.py touches User-only fields like `.email`/`.locale` on this
+    parameter). X-API-Key takes priority when present -- an agent-driven
+    request typically carries no browser session cookie at all, so falling
+    through to "not authenticated" would be the wrong failure mode.
+    """
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        return _get_service_account(db, api_key)
+
     token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -95,3 +131,19 @@ def require_write(user: User = Depends(get_current_user)) -> User:
     if user.role == "guest":
         raise HTTPException(status_code=403, detail="Guests have read-only access")
     return user
+
+
+def require_capability(capability: str):
+    """Gate an endpoint on the admin-configurable capability matrix
+    (capabilities.py), not the fixed role hierarchy. This is the deciding
+    layer wherever a capability applies (Phase 1 authz-precedence rule) --
+    it replaces require_role/require_write on the specific routes a
+    capability covers (deal/project writes, financial visibility, member
+    invites, visibility changes, aggregated reports), while routes outside
+    that bounded set keep the plain role checks unchanged.
+    """
+    def checker(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        if not has_capability(db, user.role, capability):
+            raise HTTPException(status_code=403, detail=f"Missing capability: {capability}")
+        return user
+    return checker

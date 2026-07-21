@@ -3,7 +3,7 @@ import json
 import httpx
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
-from models import AppSetting
+from utils import get_setting, set_setting  # noqa: F401 (set_setting re-exported for settings_router.py)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -16,20 +16,6 @@ def encrypt_value(value: str) -> str:
 
 def decrypt_value(value: str) -> str:
     return _fernet.decrypt(value.encode("utf-8")).decode("utf-8")
-
-
-def get_setting(db: Session, key: str):
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    return row.value if row else None
-
-
-def set_setting(db: Session, key: str, value: str):
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(AppSetting(key=key, value=value))
-    db.commit()
 
 
 def get_openrouter_key(db: Session):

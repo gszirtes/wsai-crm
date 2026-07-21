@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Calendar, Check, X } from "lucide-react";
-import api from "../api";
+import { Sparkles, Calendar, Check, X, ShieldCheck } from "lucide-react";
+import api, { formatApiError } from "../api";
 import { Button, Input, Select, Field, Badge } from "../components/common";
 
 const MODELS = [
@@ -11,33 +11,86 @@ const MODELS = [
   "mistralai/mistral-7b-instruct:free",
 ];
 
+const CAPABILITIES = [
+  "view_financials", "manage_deals", "manage_projects",
+  "invite_members", "set_visibility", "reassign_owner", "view_all_reports",
+];
+const EDITABLE_ROLES = ["user", "guest"];
+const FIXED_ROLES = ["admin", "manager"];
+
 export default function SettingsPage() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState(null);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(MODELS[0]);
+  const [defaultVisibility, setDefaultVisibility] = useState("public");
   const [saved, setSaved] = useState(false);
+  const [capabilities, setCapabilities] = useState(null);
+  const [capsSaved, setCapsSaved] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.get("/settings").then((r) => {
       setSettings(r.data);
       setModel(r.data.openrouter_model || MODELS[0]);
-    });
+      setDefaultVisibility(r.data.default_visibility || "public");
+    }).catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
+    api.get("/settings/capabilities").then((r) => setCapabilities(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
   }, []);
 
   const save = async () => {
-    const payload = { openrouter_model: model };
-    if (apiKey) payload.openrouter_api_key = apiKey;
-    const r = await api.put("/settings", payload);
-    setSettings(r.data);
-    setApiKey("");
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setError("");
+    try {
+      const payload = { openrouter_model: model };
+      if (apiKey) payload.openrouter_api_key = apiKey;
+      const r = await api.put("/settings", payload);
+      setSettings(r.data);
+      setApiKey("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const toggleCapability = (role, cap) => {
+    setCapabilities({
+      ...capabilities,
+      [role]: { ...capabilities[role], [cap]: !capabilities[role][cap] },
+    });
+  };
+
+  const saveCapabilities = async () => {
+    setError("");
+    try {
+      const r = await api.put("/settings/capabilities", capabilities);
+      setCapabilities(r.data);
+      setCapsSaved(true);
+      setTimeout(() => setCapsSaved(false), 2000);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const saveDefaultVisibility = async (value) => {
+    const previous = defaultVisibility;
+    setDefaultVisibility(value);
+    setError("");
+    try {
+      const r = await api.put("/settings", { default_visibility: value });
+      setSettings(r.data);
+    } catch (e) {
+      setDefaultVisibility(previous);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{t("settings.title")}</h1>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* AI */}
       <div className="border border-border rounded-sm p-6">
@@ -71,6 +124,73 @@ export default function SettingsPage() {
             Get a free key at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-primary hover:underline">openrouter.ai/keys</a>
           </p>
         </div>
+      </div>
+
+      {/* Capability matrix */}
+      <div className="border border-border rounded-sm p-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-sm bg-success/15 text-success flex items-center justify-center"><ShieldCheck size={18} /></div>
+          <div>
+            <h3 className="font-display font-bold">{t("capabilities.title")}</h3>
+            <p className="text-sm text-muted">{t("capabilities.desc")}</p>
+          </div>
+        </div>
+        <div className="mt-5 max-w-xs">
+          <Field label={t("capabilities.defaultVisibility")}>
+            <Select data-testid="default-visibility-select" value={defaultVisibility}
+              onChange={(e) => saveDefaultVisibility(e.target.value)}>
+              <option value="public">{t("capabilities.public")}</option>
+              <option value="private">{t("capabilities.private")}</option>
+            </Select>
+          </Field>
+        </div>
+        {capabilities && (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full text-sm" data-testid="capability-matrix">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 pr-3 font-medium text-muted">{t("capabilities.capability")}</th>
+                  {FIXED_ROLES.map((role) => (
+                    <th key={role} className="text-center py-2 px-3 font-medium text-muted">{t(`roles.${role}`)}</th>
+                  ))}
+                  {EDITABLE_ROLES.map((role) => (
+                    <th key={role} className="text-center py-2 px-3 font-medium text-muted">{t(`roles.${role}`)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {CAPABILITIES.map((cap) => (
+                  <tr key={cap} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3">
+                      {t(`capabilities.${cap}`)}
+                      {cap === "reassign_owner" && (
+                        <span className="block text-xs text-muted">{t("capabilities.reassignOwnerNote")}</span>
+                      )}
+                    </td>
+                    {FIXED_ROLES.map((role) => (
+                      <td key={role} className="text-center py-2 px-3 text-success">
+                        {capabilities[role][cap] ? <Check size={16} className="inline" /> : <X size={16} className="inline text-muted" />}
+                      </td>
+                    ))}
+                    {EDITABLE_ROLES.map((role) => (
+                      <td key={role} className="text-center py-2 px-3">
+                        <input
+                          type="checkbox"
+                          data-testid={`cap-${role}-${cap}`}
+                          checked={!!capabilities[role][cap]}
+                          onChange={() => toggleCapability(role, cap)}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Button onClick={saveCapabilities} data-testid="save-capabilities-btn" className="mt-4">
+              {capsSaved ? <><Check size={16} /> {t("common.save")}d</> : t("common.save")}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Google Workspace */}

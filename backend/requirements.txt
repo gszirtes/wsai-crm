@@ -7,6 +7,7 @@ python-dotenv==1.2.2
 # Database
 sqlalchemy==2.0.51
 psycopg2-binary==2.9.12
+alembic==1.13.2
 
 # Validation
 pydantic==2.13.4

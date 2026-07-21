@@ -46,7 +46,7 @@ export default function Projects() {
     await api.delete(`/projects/${id}`); load();
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   return (
     <div className="space-y-5">

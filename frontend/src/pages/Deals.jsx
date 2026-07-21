@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Plus, Pencil, Trash2, LayoutGrid, List } from "lucide-react";
-import api from "../api";
+import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, Spinner, Textarea } from "../components/common";
 
@@ -22,8 +22,12 @@ export default function Deals() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [error, setError] = useState("");
 
-  const load = useCallback(() => { api.get("/deals").then((r) => setItems(r.data)); }, []);
+  const load = useCallback(() => {
+    api.get("/deals").then((r) => setItems(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
+  }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     api.get("/companies").then((r) => setCompanies(r.data));
@@ -44,7 +48,7 @@ export default function Deals() {
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const eur = (n) => "€" + new Intl.NumberFormat().format(n || 0);
+  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const onDragEnd = async (result) => {
     if (!result.destination || !writable) return;
@@ -53,8 +57,16 @@ export default function Deals() {
     const deal = items.find((d) => d.id === id);
     if (!deal || deal.stage === newStage) return;
     setItems(items.map((d) => (d.id === id ? { ...d, stage: newStage } : d)));
-    await api.patch(`/deals/${id}/stage`, { stage: newStage });
-    load();
+    try {
+      await api.patch(`/deals/${id}/stage`, { stage: newStage });
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    } finally {
+      // Resync with the server regardless of outcome -- on failure this
+      // reverts the optimistic move instead of leaving the card stuck in
+      // the wrong column until a manual refresh.
+      load();
+    }
   };
 
   const byStage = (s) => (items || []).filter((d) => d.stage === s);
@@ -72,6 +84,8 @@ export default function Deals() {
           {writable && <Button onClick={openNew} data-testid="add-deal-btn"><Plus size={16} /><span className="hidden sm:inline">{t("deal.newDeal")}</span></Button>}
         </div>
       </div>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {!items ? <Spinner /> : view === "board" ? (
         <DragDropContext onDragEnd={onDragEnd}>

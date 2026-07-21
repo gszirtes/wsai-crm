@@ -3,23 +3,53 @@ load_dotenv()
 
 import os
 from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi.errors import RateLimitExceeded
 
-from database import engine, Base, SessionLocal
+from database import SessionLocal
 from models import User, Company, Contact, Deal, Project, Activity
 from auth import hash_password
 from rate_limit import limiter
 from routers import (auth_router, users, companies, contacts, deals, projects,
                      activities, dashboard, ai_router, settings_router, data_io,
-                     reports, notifications)
+                     reports, notifications, event_logs, service_accounts)
 
 app = FastAPI(title="wespeak.ai CRM")
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Every error response (HTTPException, Pydantic validation, rate limiting)
+# gets the same envelope: {detail, status_code, path}. `detail` keeps its
+# existing shape (string for HTTPException, list-of-{loc,msg,type} for
+# validation errors) since the frontend's formatApiError() already reads
+# response.data.detail and handles both shapes -- this only adds fields, it
+# doesn't change what's already there. status_code/path are new, so a
+# machine caller (an MCP agent, eventually) always has a uniform way to read
+# an error regardless of which of these three paths produced it.
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(status_code=exc.status_code, headers=exc.headers,
+                        content={"detail": exc.detail, "status_code": exc.status_code,
+                                 "path": request.url.path})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422,
+                        content={"detail": exc.errors(), "status_code": 422,
+                                 "path": request.url.path})
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429,
+                        content={"detail": f"Rate limit exceeded: {exc.detail}",
+                                 "status_code": 429, "path": request.url.path})
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,6 +73,8 @@ app.include_router(settings_router.router)
 app.include_router(data_io.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
+app.include_router(event_logs.router)
+app.include_router(service_accounts.router)
 
 
 @app.get("/api/health")
@@ -51,12 +83,9 @@ def health():
 
 
 def seed():
-    Base.metadata.create_all(bind=engine)
-    # lightweight column migrations for existing installs
-    from sqlalchemy import text
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS estimated_hours DOUBLE PRECISION DEFAULT 0"))
-        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS hourly_rate DOUBLE PRECISION DEFAULT 0"))
+    # Schema is owned by Alembic (see backend/alembic/) — `alembic upgrade head`
+    # runs before the app starts (Docker entrypoint / pytest fixtures), so by
+    # the time seed() runs here the tables already exist at the right shape.
     db = SessionLocal()
     try:
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@wespeak.ai")
@@ -136,6 +165,7 @@ def seed():
         db.close()
 
 
-@app.on_event("startup")
-def on_startup():
-    seed()
+# seed() is invoked as a one-time bootstrap step (Docker entrypoint.sh, or
+# manually via `python -c "from server import seed; seed()"` for local dev),
+# not as a FastAPI startup hook: with multiple uvicorn workers, each worker
+# would otherwise race the others through the same insert-if-missing checks.
