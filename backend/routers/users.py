@@ -4,6 +4,7 @@ from database import get_db
 from models import User
 from schemas import UserOut, UserUpdate, RegisterRequest, LocaleUpdate
 from auth import get_current_user, require_role, hash_password
+from utils import log_event
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -24,6 +25,8 @@ def create_user(payload: RegisterRequest, db: Session = Depends(get_db),
     user = User(email=email, password_hash=hash_password(payload.password),
                 name=payload.name, role=payload.role or "user", auth_provider="local")
     db.add(user)
+    db.flush()
+    log_event(db, "user", user.id, "created", admin)
     db.commit()
     db.refresh(user)
     return user
@@ -41,13 +44,20 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     if payload.role is not None:
         if user.id == admin.id and payload.role != "admin":
             raise HTTPException(status_code=400, detail="You cannot change your own admin role")
+        old_role = user.role
         user.role = payload.role
+        if user.role != old_role:
+            log_event(db, "user", user.id, "role_changed", admin, from_value=old_role, to_value=user.role)
     if payload.locale is not None:
         user.locale = payload.locale
     if payload.active is not None:
         if user.id == admin.id and payload.active is False:
             raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
+        old_active = user.active
         user.active = payload.active
+        if user.active != old_active:
+            log_event(db, "user", user.id, "status_changed", admin,
+                      from_value=str(old_active), to_value=str(user.active))
     if payload.password:
         user.password_hash = hash_password(payload.password)
     db.commit()
@@ -63,6 +73,7 @@ def delete_user(user_id: str, db: Session = Depends(get_db),
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    log_event(db, "user", user.id, "deleted", admin)
     db.delete(user)
     db.commit()
     return {"success": True}
@@ -79,7 +90,11 @@ def list_directory(db: Session = Depends(get_db), _: User = Depends(get_current_
            summary="Update own locale", description="Set the current user's UI language (en/hu). Any authenticated user.")
 def update_my_locale(payload: LocaleUpdate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
+    old_locale = user.locale
     user.locale = payload.locale
+    if user.locale != old_locale:
+        log_event(db, "user", user.id, "status_changed", user,
+                  from_value=old_locale, to_value=user.locale, note="locale")
     db.commit()
     db.refresh(user)
     return user

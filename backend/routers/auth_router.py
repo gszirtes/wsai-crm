@@ -9,6 +9,7 @@ from auth import (
     set_auth_cookies, get_current_user, get_jwt_secret, JWT_ALGORITHM,
 )
 from rate_limit import limiter
+from utils import log_event
 import jwt
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -35,6 +36,8 @@ def register(request: Request, payload: RegisterRequest, response: Response,
         auth_provider="local",
     )
     db.add(user)
+    db.flush()
+    log_event(db, "user", user.id, "created", user)
     db.commit()
     db.refresh(user)
     at = create_access_token(user.id, user.email)
@@ -85,6 +88,8 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         user = db.query(User).filter(User.id == payload["sub"]).first()
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if not user.active:
+            raise HTTPException(status_code=403, detail="Account disabled")
         at = create_access_token(user.id, user.email)
         rt = create_refresh_token(user.id)
         set_auth_cookies(response, at, rt)
