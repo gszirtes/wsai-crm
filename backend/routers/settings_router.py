@@ -49,6 +49,5 @@ def get_capabilities(db: Session = Depends(get_db), _: User = Depends(require_ro
            description="Full replace of the per-role capability matrix (all 4 roles x 7 capabilities required). Admin only.")
 def update_capabilities(payload: CapabilityMatrix, db: Session = Depends(get_db),
                         _: User = Depends(require_role("admin"))):
-    matrix = payload.model_dump()
-    set_capability_matrix(db, matrix)
-    return matrix
+    set_capability_matrix(db, payload.model_dump())
+    return get_capability_matrix(db)

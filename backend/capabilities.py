@@ -60,6 +60,17 @@ def get_capability_matrix(db: Session) -> dict:
 
 
 def set_capability_matrix(db: Session, matrix: dict):
+    """Persist the matrix, but admin/manager are architecturally fixed to
+    every capability regardless of what the caller submits -- they're meant
+    to always see/do everything, and require_capability() is the only thing
+    standing between a false-in-storage cell and every admin being locked
+    out of, say, manage_deals. The admin Settings UI already renders those
+    two columns as read-only for the same reason; this is the server-side
+    half of that invariant so a raw API call can't bypass it."""
+    matrix = {role: dict(caps) for role, caps in matrix.items()}
+    for role in ("admin", "manager"):
+        if role in matrix:
+            matrix[role] = {c: True for c in ALL_CAPABILITIES}
     set_setting(db, SETTING_KEY, json.dumps(matrix))
 
 
