@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
-from schemas import SettingUpdate, CapabilityMatrix
+from schemas import SettingUpdate, CapabilityMatrix, ThresholdSettings
 from auth import require_role
 from ai_service import get_setting, set_setting, encrypt_value, get_model
 from capabilities import (get_capability_matrix, set_capability_matrix,
                           get_default_visibility, set_default_visibility)
+from thresholds import get_thresholds, set_thresholds
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -51,3 +52,17 @@ def update_capabilities(payload: CapabilityMatrix, db: Session = Depends(get_db)
                         _: User = Depends(require_role("admin"))):
     set_capability_matrix(db, payload.model_dump())
     return get_capability_matrix(db)
+
+
+@router.get("/thresholds", response_model=ThresholdSettings, summary="Get SLA thresholds",
+           description="Business-day thresholds (D7) backing the unassigned-lead / awaiting-response reminders and the future is_stale flag. Admin only.")
+def get_sla_thresholds(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
+    return get_thresholds(db)
+
+
+@router.put("/thresholds", response_model=ThresholdSettings, summary="Update SLA thresholds",
+           description="Set all three business-day thresholds (D7). Admin only.")
+def update_sla_thresholds(payload: ThresholdSettings, db: Session = Depends(get_db),
+                          _: User = Depends(require_role("admin"))):
+    set_thresholds(db, payload.model_dump())
+    return get_thresholds(db)

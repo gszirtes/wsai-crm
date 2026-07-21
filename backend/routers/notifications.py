@@ -2,9 +2,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Notification, Activity, Project, User
+from models import Notification, Activity, Project, Deal, User
 from auth import get_current_user
 from utils import logged_hours_for
+from capabilities import has_capability
+from thresholds import get_thresholds, business_days_since
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -52,6 +54,22 @@ def _build_desired(db: Session, user: User) -> dict:
                 "body": f"{p.name} is {'over budget' if over else 'past its deadline'}",
                 "link": f"/projects/{p.id}",
             }
+
+    # D1/JV-10: an unowned lead isn't anyone's (owner_id IS NULL, so the
+    # owner_id==user.id lazy pattern above would never surface it to anyone)
+    # -- surfaced instead to whoever has view_all_reports (managers/admin),
+    # not tied to a specific assignee.
+    if has_capability(db, user.role, "view_all_reports"):
+        threshold_days = get_thresholds(db)["unassigned_days"]
+        unclaimed = db.query(Deal).filter(Deal.owner_id.is_(None)).all()
+        for d in unclaimed:
+            if business_days_since(d.created_at, now) >= threshold_days:
+                desired[f"unclaimed_lead:{d.id}"] = {
+                    "type": "auto_unclaimed_lead",
+                    "title": "Unclaimed lead",
+                    "body": d.title,
+                    "link": f"/deals/{d.id}",
+                }
     return desired
 
 
