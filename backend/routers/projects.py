@@ -32,12 +32,12 @@ def compute_health(project: Project, logged: float) -> str:
     return "on_track"
 
 
-def to_out(db: Session, p: Project, user: User) -> ProjectOut:
+def to_out(db: Session, p: Project, user: User, can_view: bool = None) -> ProjectOut:
     logged = logged_hours_for(db, p.id)
     out = ProjectOut.model_validate(p)
     out.logged_hours = logged
     out.health = compute_health(p, logged)
-    return mask_project_out(db, user, out)
+    return mask_project_out(db, user, out, can_view)
 
 
 @router.get("", response_model=list[ProjectOut],
@@ -57,11 +57,12 @@ def list_projects(response: Response, status: str = "", limit: int = 20, offset:
             .filter(TimeEntry.project_id.in_(ids)).group_by(TimeEntry.project_id).all()
         hours = {pid: float(h) for pid, h in rows}
     out = []
+    can_view = can_view_financials(db, user)
     for p in projects:
         o = ProjectOut.model_validate(p)
         o.logged_hours = hours.get(p.id, 0.0)
         o.health = compute_health(p, o.logged_hours)
-        out.append(mask_project_out(db, user, o))
+        out.append(mask_project_out(db, user, o, can_view))
     response.headers["X-Total-Count"] = str(total)
     return out
 
@@ -221,9 +222,12 @@ def delete_project(project_id: str, db: Session = Depends(get_db),
 
 # ---------- Time entries ----------
 @router.get("/{project_id}/time", response_model=list[TimeEntryOut],
-           summary="List time entries", description="List logged time entries for a project, most recent first.")
+           summary="List time entries", description="List logged time entries for a project, most recent first. 404 if the project is private and this user isn't admin/manager/owner/member.")
 def list_time(project_id: str, db: Session = Depends(get_db),
-              _: User = Depends(get_current_user)):
+              user: User = Depends(get_current_user)):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
+        raise HTTPException(status_code=404, detail="Project not found")
     entries = db.query(TimeEntry).filter(TimeEntry.project_id == project_id) \
         .order_by(TimeEntry.entry_date.desc()).all()
     users = {u.id: u.name for u in db.query(User).all()}
@@ -236,10 +240,11 @@ def list_time(project_id: str, db: Session = Depends(get_db),
 
 
 @router.post("/{project_id}/time", response_model=TimeEntryOut,
-            summary="Log time", description="Log an hours entry against a project for the current user. user_id is always the creating user, never accepted from the payload.")
+            summary="Log time", description="Log an hours entry against a project for the current user. user_id is always the creating user, never accepted from the payload. 404 if the project is private and this user isn't admin/manager/owner/member.")
 def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(get_db),
              user: User = Depends(require_write)):
-    if not db.query(Project).filter(Project.id == project_id).first():
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     entry = TimeEntry(
         project_id=project_id,
@@ -250,6 +255,8 @@ def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(ge
         entry_date=payload.entry_date or datetime.now(timezone.utc),
     )
     db.add(entry)
+    db.flush()
+    log_event(db, "time_entry", entry.id, "created", user, note=project_id)
     db.commit()
     db.refresh(entry)
     eo = TimeEntryOut.model_validate(entry)
@@ -258,15 +265,19 @@ def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(ge
 
 
 @router.delete("/{project_id}/time/{entry_id}",
-              summary="Delete a time entry", description="Delete one time entry. Only the entry's own creator, or an admin/manager, may delete it.")
+              summary="Delete a time entry", description="Delete one time entry. Only the entry's own creator, or an admin/manager, may delete it. 404 if the project is private and this user isn't admin/manager/owner/member.")
 def delete_time(project_id: str, entry_id: str, db: Session = Depends(get_db),
                 user: User = Depends(require_write)):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
+        raise HTTPException(status_code=404, detail="Project not found")
     e = db.query(TimeEntry).filter(TimeEntry.id == entry_id,
                                    TimeEntry.project_id == project_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Time entry not found")
     if e.user_id != user.id and user.role not in ("admin", "manager"):
         raise HTTPException(status_code=403, detail="You can only delete your own time entries")
+    log_event(db, "time_entry", e.id, "deleted", user, note=project_id)
     db.delete(e)
     db.commit()
     return {"success": True}

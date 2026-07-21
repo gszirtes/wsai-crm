@@ -1,15 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Activity, User
+from models import Activity, Deal, Project, User
 from schemas import ActivityCreate, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event, owner_id_for
+from visibility import can_see
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 _PARENT_LINKS = (("contact", "contact_id"), ("company", "company_id"),
                  ("deal", "deal_id"), ("project", "project_id"))
+
+
+def _check_deal_project_visible(db: Session, deal_id: str, project_id: str, user: User):
+    """Deal/Project are visibility-scoped; an activity linked to a private one
+    the caller can't see must not be readable/writable through this endpoint
+    either, even though Activity itself isn't visibility-scoped."""
+    if deal_id:
+        d = db.query(Deal).filter(Deal.id == deal_id).first()
+        if not d or not can_see(db, "deal", d, user):
+            raise HTTPException(status_code=404, detail="Deal not found")
+    if project_id:
+        p = db.query(Project).filter(Project.id == project_id).first()
+        if not p or not can_see(db, "project", p, user):
+            raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _log_activity_created(db: Session, a: Activity, user):
@@ -22,10 +37,11 @@ def _log_activity_created(db: Session, a: Activity, user):
 
 
 @router.get("", response_model=list[ActivityOut],
-           summary="List activities", description="List activities, optionally filtered by completed/contact/deal/project, or sorted by soonest due date (upcoming=true).")
+           summary="List activities", description="List activities, optionally filtered by completed/contact/deal/project, or sorted by soonest due date (upcoming=true). 404 if a deal_id/project_id filter points at a private one this user isn't admin/manager/owner/member of.")
 def list_activities(completed: str = "", contact_id: str = "", deal_id: str = "",
                     project_id: str = "", upcoming: str = "",
-                    db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _check_deal_project_visible(db, deal_id, project_id, user)
     q = db.query(Activity)
     if completed in ("true", "false"):
         q = q.filter(Activity.completed == (completed == "true"))
@@ -40,9 +56,10 @@ def list_activities(completed: str = "", contact_id: str = "", deal_id: str = ""
 
 
 @router.post("", response_model=ActivityOut,
-            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project.")
+            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project. 404 if deal_id/project_id points at a private one this user isn't admin/manager/owner/member of.")
 def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
+    _check_deal_project_visible(db, payload.deal_id, payload.project_id, user)
     a = Activity(**payload.model_dump(), owner_id=owner_id_for(user))
     db.add(a)
     db.flush()
@@ -53,12 +70,14 @@ def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
 
 
 @router.put("/{activity_id}", response_model=ActivityOut,
-           summary="Update an activity", description="Full replace of the editable fields. Logs a status_changed event if completed differs from before (same as PATCH /toggle).")
+           summary="Update an activity", description="Full replace of the editable fields. Logs a status_changed event if completed differs from before (same as PATCH /toggle). 404 if linked to a private deal/project this user isn't admin/manager/owner/member of.")
 def update_activity(activity_id: str, payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    _check_deal_project_visible(db, a.deal_id, a.project_id, user)
+    _check_deal_project_visible(db, payload.deal_id, payload.project_id, user)
     old_completed = a.completed
     for k, v in payload.model_dump().items():
         setattr(a, k, v)
@@ -71,12 +90,13 @@ def update_activity(activity_id: str, payload: ActivityCreate, db: Session = Dep
 
 
 @router.patch("/{activity_id}/toggle", response_model=ActivityOut,
-             summary="Toggle completed", description="Flip an activity's completed flag. Logs a status_changed event.")
+             summary="Toggle completed", description="Flip an activity's completed flag. Logs a status_changed event. 404 if linked to a private deal/project this user isn't admin/manager/owner/member of.")
 def toggle_activity(activity_id: str, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    _check_deal_project_visible(db, a.deal_id, a.project_id, user)
     old_completed = a.completed
     a.completed = not a.completed
     log_event(db, "activity", a.id, "status_changed", user,
@@ -86,12 +106,13 @@ def toggle_activity(activity_id: str, db: Session = Depends(get_db),
     return a
 
 
-@router.delete("/{activity_id}", summary="Delete an activity", description="Hard delete. Logs a deleted event.")
+@router.delete("/{activity_id}", summary="Delete an activity", description="Hard delete. Logs a deleted event. 404 if linked to a private deal/project this user isn't admin/manager/owner/member of.")
 def delete_activity(activity_id: str, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Activity not found")
+    _check_deal_project_visible(db, a.deal_id, a.project_id, user)
     log_event(db, "activity", a.id, "deleted", user)
     db.delete(a)
     db.commit()
