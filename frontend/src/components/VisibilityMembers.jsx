@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Users, X } from "lucide-react";
-import api from "../api";
+import api, { formatApiError } from "../api";
 import { Button, Select, Badge, Spinner } from "./common";
 
 // Shared by DealDetail and ProjectDetail: a visibility toggle + member list/
@@ -16,29 +16,50 @@ export default function VisibilityMembers({ entityType, entityId, visibility, ow
   const [members, setMembers] = useState(null);
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState("");
+  const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    api.get(`/${entityType}s/${entityId}/members`).then((r) => setMembers(r.data));
+    api.get(`/${entityType}s/${entityId}/members`).then((r) => setMembers(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
   }, [entityType, entityId]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get("/users/directory").then((r) => setUsers(r.data)); }, []);
+  useEffect(() => {
+    api.get("/users/directory").then((r) => setUsers(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
+  }, []);
 
   const toggleVisibility = async () => {
-    const next = visibility === "public" ? "private" : "public";
-    const r = await api.patch(`/${entityType}s/${entityId}/visibility`, { visibility: next });
-    onVisibilityChange(r.data.visibility);
+    setError("");
+    try {
+      const r = await api.patch(`/${entityType}s/${entityId}/visibility`, {
+        visibility: visibility === "public" ? "private" : "public",
+      });
+      onVisibilityChange(r.data.visibility);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const invite = async () => {
     if (!selected) return;
-    await api.post(`/${entityType}s/${entityId}/members`, { user_id: selected });
-    setSelected("");
-    load();
+    setError("");
+    try {
+      await api.post(`/${entityType}s/${entityId}/members`, { user_id: selected });
+      setSelected("");
+      load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const removeMember = async (userId) => {
-    await api.delete(`/${entityType}s/${entityId}/members/${userId}`);
-    load();
+    setError("");
+    try {
+      await api.delete(`/${entityType}s/${entityId}/members/${userId}`);
+      load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const memberIds = new Set((members || []).map((m) => m.user_id));
@@ -60,6 +81,8 @@ export default function VisibilityMembers({ entityType, entityId, visibility, ow
           )}
         </div>
       </div>
+
+      {error && <p className="text-sm text-danger mb-3">{error}</p>}
 
       {!members ? <Spinner /> : (
         <div className="space-y-2">

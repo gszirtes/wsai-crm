@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Sparkles, Calendar, Check, X, ShieldCheck } from "lucide-react";
-import api from "../api";
+import api, { formatApiError } from "../api";
 import { Button, Input, Select, Field, Badge } from "../components/common";
 
 const MODELS = [
@@ -27,24 +27,31 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [capabilities, setCapabilities] = useState(null);
   const [capsSaved, setCapsSaved] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.get("/settings").then((r) => {
       setSettings(r.data);
       setModel(r.data.openrouter_model || MODELS[0]);
       setDefaultVisibility(r.data.default_visibility || "public");
-    });
-    api.get("/settings/capabilities").then((r) => setCapabilities(r.data));
+    }).catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
+    api.get("/settings/capabilities").then((r) => setCapabilities(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
   }, []);
 
   const save = async () => {
-    const payload = { openrouter_model: model };
-    if (apiKey) payload.openrouter_api_key = apiKey;
-    const r = await api.put("/settings", payload);
-    setSettings(r.data);
-    setApiKey("");
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setError("");
+    try {
+      const payload = { openrouter_model: model };
+      if (apiKey) payload.openrouter_api_key = apiKey;
+      const r = await api.put("/settings", payload);
+      setSettings(r.data);
+      setApiKey("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const toggleCapability = (role, cap) => {
@@ -55,21 +62,35 @@ export default function SettingsPage() {
   };
 
   const saveCapabilities = async () => {
-    const r = await api.put("/settings/capabilities", capabilities);
-    setCapabilities(r.data);
-    setCapsSaved(true);
-    setTimeout(() => setCapsSaved(false), 2000);
+    setError("");
+    try {
+      const r = await api.put("/settings/capabilities", capabilities);
+      setCapabilities(r.data);
+      setCapsSaved(true);
+      setTimeout(() => setCapsSaved(false), 2000);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const saveDefaultVisibility = async (value) => {
+    const previous = defaultVisibility;
     setDefaultVisibility(value);
-    const r = await api.put("/settings", { default_visibility: value });
-    setSettings(r.data);
+    setError("");
+    try {
+      const r = await api.put("/settings", { default_visibility: value });
+      setSettings(r.data);
+    } catch (e) {
+      setDefaultVisibility(previous);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{t("settings.title")}</h1>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {/* AI */}
       <div className="border border-border rounded-sm p-6">
@@ -140,7 +161,12 @@ export default function SettingsPage() {
               <tbody>
                 {CAPABILITIES.map((cap) => (
                   <tr key={cap} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3">{t(`capabilities.${cap}`)}</td>
+                    <td className="py-2 pr-3">
+                      {t(`capabilities.${cap}`)}
+                      {cap === "reassign_owner" && (
+                        <span className="block text-xs text-muted">{t("capabilities.reassignOwnerNote")}</span>
+                      )}
+                    </td>
                     {FIXED_ROLES.map((role) => (
                       <td key={role} className="text-center py-2 px-3 text-success">
                         {capabilities[role][cap] ? <Check size={16} className="inline" /> : <X size={16} className="inline text-muted" />}
