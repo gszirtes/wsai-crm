@@ -231,3 +231,6 @@ credentials.json
 .megamemory/
 .omo/
 .serena/
+
+frontend/node_modules/
+frontend/build/
