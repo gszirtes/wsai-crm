@@ -1,6 +1,6 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from models import TimeEntry, EventLog, AppSetting
+from models import TimeEntry, EventLog, AppSetting, ServiceAccount
 
 
 def logged_hours_for(db: Session, project_id: str) -> float:
@@ -26,18 +26,37 @@ def set_setting(db: Session, key: str, value: str):
     db.commit()
 
 
+def owner_id_for(actor) -> str:
+    """FK-safe owner/user id for a write. `owner_id` (Company/Contact/Deal/
+    Project/Activity) and `user_id` (TimeEntry/Notification/AICommandLog) are
+    all FKs to `users.id` specifically -- a ServiceAccount lives in a
+    different table with its own id space, so `service_account.id` would
+    violate that FK outright (a real bug this helper exists to prevent, not
+    a hypothetical one: it was caught by test_service_account_write_logs_
+    service_actor failing with a ForeignKeyViolation during Phase 1).
+    A service-authenticated write leaves the entity unassigned/ownerless
+    (None) rather than erroring -- consistent with owner_id already being
+    nullable everywhere it's used.
+    """
+    return None if isinstance(actor, ServiceAccount) else actor.id
+
+
 def log_event(db: Session, entity_type: str, entity_id: str, event_type: str, actor,
-              actor_type: str = "user", from_value: str = None, to_value: str = None,
+              actor_type: str = None, from_value: str = None, to_value: str = None,
               activity_id: str = None, note: str = None) -> EventLog:
     """Append one row to the EventLog audit trail.
 
-    `actor` is whatever principal performed the write — a `User` in every
-    caller today, but the field is duck-typed (just needs `.id`) so a future
-    ServiceAccount principal (Phase 1/6) can be passed with actor_type="service"
-    without changing this helper. Only adds to the session; the caller's own
+    `actor` is whatever principal performed the write — a `User` or (Phase 1)
+    a `ServiceAccount`. `actor_type` is auto-inferred from `actor`'s type when
+    not passed explicitly, so none of the ~30 existing log_event() call sites
+    across the routers needed to change when ServiceAccount was introduced --
+    they all just pass whatever `get_current_user()` gave them and get the
+    right actor_type for free. Only adds to the session; the caller's own
     db.commit() persists it alongside the actual entity write, so a write and
     its audit row always land in the same transaction.
     """
+    if actor_type is None:
+        actor_type = "service" if isinstance(actor, ServiceAccount) else "user"
     ev = EventLog(
         entity_type=entity_type, entity_id=entity_id, event_type=event_type,
         from_value=from_value, to_value=to_value,

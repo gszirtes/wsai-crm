@@ -4,7 +4,7 @@ from database import get_db
 from models import Company, Contact, Deal, Project, Activity, User
 from schemas import CompanyCreate, CompanyOut, ContactOut, DealOut, ProjectOut
 from auth import get_current_user, require_write
-from utils import log_event
+from utils import log_event, owner_id_for
 from visibility import visibility_filter
 from financials import mask_deal_out, mask_project_out
 
@@ -54,7 +54,7 @@ def get_company(company_id: str, db: Session = Depends(get_db),
             summary="Create a company", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_company(payload: CompanyCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
-    c = Company(**payload.model_dump(), owner_id=user.id)
+    c = Company(**payload.model_dump(), owner_id=owner_id_for(user))
     db.add(c)
     db.flush()
     log_event(db, "company", c.id, "created", user)

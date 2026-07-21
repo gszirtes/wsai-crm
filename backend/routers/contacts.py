@@ -4,7 +4,7 @@ from database import get_db
 from models import Contact, Company, Deal, Activity, User
 from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
-from utils import log_event
+from utils import log_event, owner_id_for
 from visibility import visibility_filter
 from financials import mask_deal_out
 
@@ -65,7 +65,7 @@ def get_contact(contact_id: str, db: Session = Depends(get_db),
             summary="Create a contact", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_contact(payload: ContactCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_write)):
-    c = Contact(**payload.model_dump(), owner_id=user.id)
+    c = Contact(**payload.model_dump(), owner_id=owner_id_for(user))
     db.add(c)
     db.flush()
     log_event(db, "contact", c.id, "created", user)

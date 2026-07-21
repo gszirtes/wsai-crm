@@ -6,7 +6,7 @@ from models import (Contact, Company, Deal, Project, Activity, User, AICommandLo
 from schemas import AICommandRequest
 from auth import get_current_user, require_write
 from ai_service import get_openrouter_key, get_model, run_ai_command
-from utils import log_event
+from utils import log_event, owner_id_for
 from capabilities import has_capability, get_default_visibility
 from membership import add_member
 
@@ -40,7 +40,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             phone=data.get("phone"),
             title=data.get("title"),
             status=status,
-            owner_id=user.id,
+            owner_id=owner_id_for(user),
         )
         db.add(obj); db.commit(); db.refresh(obj)
         log_event(db, "contact", obj.id, "created", user); db.commit()
@@ -52,7 +52,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             website=data.get("website"),
             phone=data.get("phone"),
             email=data.get("email"),
-            owner_id=user.id,
+            owner_id=owner_id_for(user),
         )
         db.add(obj); db.commit(); db.refresh(obj)
         log_event(db, "company", obj.id, "created", user); db.commit()
@@ -70,12 +70,13 @@ def _execute(action: str, data: dict, db: Session, user: User):
             value=value,
             currency=data.get("currency", "EUR"),
             stage=stage,
-            owner_id=user.id,
+            owner_id=owner_id_for(user),
             visibility=get_default_visibility(db),
         )
         db.add(obj); db.commit(); db.refresh(obj)
         log_event(db, "deal", obj.id, "created", user)
-        add_member(db, "deal", obj.id, user.id, added_by=user)
+        if isinstance(user, User):
+            add_member(db, "deal", obj.id, user.id, added_by=user)
         db.commit()
         created = {"type": "deal", "id": obj.id, "name": obj.title}
     elif action == "create_project":
@@ -90,12 +91,13 @@ def _execute(action: str, data: dict, db: Session, user: User):
             description=data.get("description"),
             status=status,
             priority=priority,
-            owner_id=user.id,
+            owner_id=owner_id_for(user),
             visibility=get_default_visibility(db),
         )
         db.add(obj); db.commit(); db.refresh(obj)
         log_event(db, "project", obj.id, "created", user)
-        add_member(db, "project", obj.id, user.id, added_by=user)
+        if isinstance(user, User):
+            add_member(db, "project", obj.id, user.id, added_by=user)
         db.commit()
         created = {"type": "project", "id": obj.id, "name": obj.name}
     elif action == "create_activity":
@@ -106,7 +108,7 @@ def _execute(action: str, data: dict, db: Session, user: User):
             type=atype,
             subject=data.get("subject") or data.get("title") or "New Task",
             description=data.get("description"),
-            owner_id=user.id,
+            owner_id=owner_id_for(user),
         )
         db.add(obj); db.commit(); db.refresh(obj)
         log_event(db, "activity", obj.id, "created", user); db.commit()
@@ -146,7 +148,7 @@ async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
             raise HTTPException(status_code=403, detail=f"Missing capability: {required_cap}")
         created = _execute(action, data, db, user)
 
-    log = AICommandLog(user_id=user.id, command=payload.command, action=action,
+    log = AICommandLog(user_id=owner_id_for(user), command=payload.command, action=action,
                        response=message)
     db.add(log); db.commit()
 

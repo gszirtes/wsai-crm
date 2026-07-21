@@ -2,6 +2,7 @@
 financial masking, service accounts), plus a couple of Phase 0 gaps caught
 during this phase's own review (deleted events, PUT-completed-change logging)."""
 import pytest
+import requests
 
 
 def _events(client, base_url, entity_type, entity_id):
@@ -486,3 +487,94 @@ class TestFinancialMasking:
             assert all(row["billable_amount"] is None for row in body["users"])
         finally:
             admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
+
+
+class TestServiceAccount:
+    """1.7: API-key principal (MCP-enabler). Uses plain `requests` with an
+    X-API-Key header rather than the cookie-based fixture clients, since a
+    service account authenticates differently from a human login."""
+
+    def test_non_admin_cannot_manage_service_accounts(self, user_client, base_url):
+        assert user_client.get(f"{base_url}/api/service-accounts").status_code == 403
+        assert user_client.post(f"{base_url}/api/service-accounts",
+                                json={"name": "x", "role": "user"}).status_code == 403
+
+    def test_create_returns_key_once_and_list_never_does(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/service-accounts",
+                               json={"name": "TEST_p1 sa", "role": "user"})
+        assert cr.status_code == 200, cr.text
+        body = cr.json()
+        assert body["api_key"].startswith("sk_")
+        sa_id = body["id"]
+        try:
+            listing = admin_client.get(f"{base_url}/api/service-accounts").json()
+            match = [s for s in listing if s["id"] == sa_id]
+            assert match and "api_key" not in match[0] and "key_hash" not in match[0]
+        finally:
+            admin_client.delete(f"{base_url}/api/service-accounts/{sa_id}")
+
+    def test_api_key_authenticates_with_assigned_role(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/service-accounts",
+                               json={"name": "TEST_p1 sa role", "role": "manager"})
+        sa_id, api_key = cr.json()["id"], cr.json()["api_key"]
+        try:
+            r = requests.get(f"{base_url}/api/deals", headers={"X-API-Key": api_key}, timeout=20)
+            assert r.status_code == 200, r.text
+            # manager role -> view_all_reports capability -> utilization reachable
+            r2 = requests.get(f"{base_url}/api/reports/utilization", headers={"X-API-Key": api_key}, timeout=20)
+            assert r2.status_code == 200, r2.text
+        finally:
+            admin_client.delete(f"{base_url}/api/service-accounts/{sa_id}")
+
+    def test_guest_role_service_account_blocked_from_write(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/service-accounts",
+                               json={"name": "TEST_p1 sa guest", "role": "guest"})
+        sa_id, api_key = cr.json()["id"], cr.json()["api_key"]
+        try:
+            r = requests.post(f"{base_url}/api/deals", json={"title": "should be blocked"},
+                              headers={"X-API-Key": api_key}, timeout=20)
+            assert r.status_code == 403
+        finally:
+            admin_client.delete(f"{base_url}/api/service-accounts/{sa_id}")
+
+    def test_deactivated_key_rejected(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/service-accounts",
+                               json={"name": "TEST_p1 sa deactivate", "role": "user"})
+        sa_id, api_key = cr.json()["id"], cr.json()["api_key"]
+        try:
+            assert requests.get(f"{base_url}/api/deals", headers={"X-API-Key": api_key}, timeout=20).status_code == 200
+            pr = admin_client.patch(f"{base_url}/api/service-accounts/{sa_id}", json={"active": False})
+            assert pr.status_code == 200, pr.text
+            r = requests.get(f"{base_url}/api/deals", headers={"X-API-Key": api_key}, timeout=20)
+            assert r.status_code == 401
+        finally:
+            admin_client.delete(f"{base_url}/api/service-accounts/{sa_id}")
+
+    def test_invalid_api_key_rejected(self, base_url):
+        r = requests.get(f"{base_url}/api/deals", headers={"X-API-Key": "sk_totally-bogus"}, timeout=20)
+        assert r.status_code == 401
+
+    def test_service_account_write_logs_service_actor(self, admin_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/service-accounts",
+                               json={"name": "TEST_p1 sa actor", "role": "admin"})
+        sa_id, api_key = cr.json()["id"], cr.json()["api_key"]
+        try:
+            dr = requests.post(f"{base_url}/api/deals", json={"title": "TEST_p1 sa deal"},
+                               headers={"X-API-Key": api_key}, timeout=20)
+            assert dr.status_code == 200, dr.text
+            deal_id = dr.json()["id"]
+            try:
+                events = _events(admin_client, base_url, "deal", deal_id)
+                created = [e for e in events if e["event_type"] == "created"]
+                assert len(created) == 1
+                assert created[0]["actor_type"] == "service"
+                assert created[0]["actor_id"] == sa_id
+            finally:
+                admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+        finally:
+            admin_client.delete(f"{base_url}/api/service-accounts/{sa_id}")
+
+    def test_update_and_delete_nonexistent_404(self, admin_client, base_url):
+        assert admin_client.patch(f"{base_url}/api/service-accounts/does-not-exist",
+                                  json={"active": False}).status_code == 404
+        assert admin_client.delete(f"{base_url}/api/service-accounts/does-not-exist").status_code == 404

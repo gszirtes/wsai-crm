@@ -4,7 +4,7 @@ from database import get_db
 from models import Deal, Company, Contact, Activity, User
 from schemas import DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd, ActivityOut
 from auth import get_current_user, require_capability
-from utils import log_event
+from utils import log_event, owner_id_for
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
@@ -60,14 +60,15 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
 
 
 @router.post("", response_model=DealOut,
-            summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
+            summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload. A service-account-authenticated create leaves the deal unassigned/ownerless instead (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
 def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
-    d = Deal(**payload.model_dump(), owner_id=user.id, visibility=get_default_visibility(db))
+    d = Deal(**payload.model_dump(), owner_id=owner_id_for(user), visibility=get_default_visibility(db))
     db.add(d)
     db.flush()
     log_event(db, "deal", d.id, "created", user)
-    add_member(db, "deal", d.id, user.id, added_by=user)
+    if isinstance(user, User):
+        add_member(db, "deal", d.id, user.id, added_by=user)
     db.commit()
     db.refresh(d)
     return _to_out(db, d, user)

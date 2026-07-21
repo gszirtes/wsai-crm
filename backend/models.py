@@ -214,3 +214,24 @@ class AICommandLog(Base):
     action = Column(String, nullable=True)
     response = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class ServiceAccount(Base):
+    """API-key principal for machine/agent access (Phase 1 MCP-enabler --
+    the actual MCP server is Phase 6). Plugs into the exact same role +
+    capability model as a human User: `role` is checked by require_role/
+    require_capability/has_capability identically, since those only ever
+    read `.role` off whatever principal get_current_user() returned. Never
+    stores the raw key -- key_hash is a SHA-256 digest, looked up by exact
+    match (the key itself is a high-entropy random token, not a
+    user-chosen password, so bcrypt's slow-hash brute-force protection
+    isn't the relevant property here; fast, indexed exact-match lookup is).
+    """
+    __tablename__ = "service_accounts"
+    id = Column(String, primary_key=True, default=gen_id)
+    name = Column(String, nullable=False)
+    key_hash = Column(String, nullable=False, unique=True, index=True)
+    role = Column(String, nullable=False, default="user")  # admin, manager, user, guest -- same as User.role
+    active = Column(Boolean, default=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)

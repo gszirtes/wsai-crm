@@ -7,7 +7,7 @@ from models import Project, TimeEntry, Activity, Company, Contact, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
                      ActivityOut, VisibilityUpdate, MemberAdd)
 from auth import get_current_user, require_write, require_capability
-from utils import logged_hours_for, log_event
+from utils import logged_hours_for, log_event, owner_id_for
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
@@ -113,14 +113,15 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
 
 
 @router.post("", response_model=ProjectOut,
-            summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
+            summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload. A service-account-authenticated create leaves the project unassigned/ownerless instead (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_capability("manage_projects"))):
-    p = Project(**payload.model_dump(), owner_id=user.id, visibility=get_default_visibility(db))
+    p = Project(**payload.model_dump(), owner_id=owner_id_for(user), visibility=get_default_visibility(db))
     db.add(p)
     db.flush()
     log_event(db, "project", p.id, "created", user)
-    add_member(db, "project", p.id, user.id, added_by=user)
+    if isinstance(user, User):
+        add_member(db, "project", p.id, user.id, added_by=user)
     db.commit()
     db.refresh(p)
     return to_out(db, p, user)
@@ -242,7 +243,7 @@ def add_time(project_id: str, payload: TimeEntryCreate, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Project not found")
     entry = TimeEntry(
         project_id=project_id,
-        user_id=user.id,
+        user_id=owner_id_for(user),
         hours=payload.hours,
         description=payload.description,
         billable=payload.billable if payload.billable is not None else True,

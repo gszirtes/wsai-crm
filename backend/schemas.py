@@ -261,3 +261,30 @@ class CapabilityMatrix(BaseModel):
 
 class LocaleUpdate(BaseModel):
     locale: Literal["en", "hu"]
+
+
+# ---------- Service accounts (Phase 1 MCP-enabler) ----------
+class ServiceAccountCreate(BaseModel):
+    name: str
+    role: UserRole = "user"
+
+
+class ServiceAccountOut(BaseModel):
+    id: str
+    name: str
+    role: UserRole
+    active: bool
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ServiceAccountCreated(ServiceAccountOut):
+    api_key: str  # plaintext, present only in the create response -- never retrievable again
+
+
+class ServiceAccountUpdate(BaseModel):
+    role: Optional[UserRole] = None
+    active: Optional[bool] = None

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Contact, Company, Deal, Project, User
 from auth import get_current_user, require_write
-from utils import log_event
+from utils import log_event, owner_id_for
 from visibility import visibility_filter
 from financials import can_view_financials
 
@@ -112,7 +112,7 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
         if cname:
             company_id = companies.get(cname.lower())
             if not company_id:
-                comp = Company(name=cname, owner_id=user.id)
+                comp = Company(name=cname, owner_id=owner_id_for(user))
                 db.add(comp); db.commit(); db.refresh(comp)
                 log_event(db, "company", comp.id, "created", user); db.commit()
                 companies[cname.lower()] = comp.id
@@ -121,7 +121,7 @@ async def import_contacts(file: UploadFile = File(...), db: Session = Depends(ge
             first_name=first, last_name=row.get("last_name"),
             email=email, phone=row.get("phone"),
             title=row.get("title"), status=status,
-            company_id=company_id, owner_id=user.id,
+            company_id=company_id, owner_id=owner_id_for(user),
         )
         db.add(c); db.flush()
         log_event(db, "contact", c.id, "created", user)

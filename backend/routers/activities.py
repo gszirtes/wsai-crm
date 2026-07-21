@@ -4,7 +4,7 @@ from database import get_db
 from models import Activity, User
 from schemas import ActivityCreate, ActivityOut
 from auth import get_current_user, require_write
-from utils import log_event
+from utils import log_event, owner_id_for
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
@@ -43,7 +43,7 @@ def list_activities(completed: str = "", contact_id: str = "", deal_id: str = ""
             summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project.")
 def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
-    a = Activity(**payload.model_dump(), owner_id=user.id)
+    a = Activity(**payload.model_dump(), owner_id=owner_id_for(user))
     db.add(a)
     db.flush()
     _log_activity_created(db, a, user)
