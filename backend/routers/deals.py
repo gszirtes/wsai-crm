@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, User
-from schemas import DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd, ActivityOut
+from schemas import (DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd,
+                     ActivityOut, OwnerUpdate)
 from auth import get_current_user, require_capability
 from utils import log_event, owner_id_for
 from capabilities import get_default_visibility
@@ -14,6 +16,15 @@ router = APIRouter(prefix="/api/deals", tags=["deals"])
 
 STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
                      "negotiation": 75, "won": 100, "lost": 0}
+# D1/BL-4: an unowned lead may sit in the shared inbox but can't advance past
+# "qualified" -- these are the stages that require owner_id to already be set.
+OWNER_REQUIRED_STAGES = {"proposal", "negotiation", "won", "lost"}
+
+
+def _check_owner_required(d: Deal, new_stage: str):
+    if new_stage in OWNER_REQUIRED_STAGES and not d.owner_id:
+        raise HTTPException(status_code=400,
+                            detail="This deal needs an owner (claim it first) before it can move past qualified")
 
 
 def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
@@ -21,12 +32,14 @@ def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
 
 
 @router.get("", response_model=list[DealOut],
-           summary="List deals", description="List deals, optionally filtered by stage, newest first. Private deals only appear for admin/manager, their owner, or invited members. `value` is null without view_financials.")
-def list_deals(stage: str = "", db: Session = Depends(get_db),
+           summary="List deals", description="List deals, optionally filtered by stage or unassigned=true (shared-inbox leads with no owner), newest first. Private deals only appear for admin/manager, their owner, or invited members. `value` is null without view_financials.")
+def list_deals(stage: str = "", unassigned: bool = False, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     q = db.query(Deal).filter(visibility_filter(db, Deal, "deal", user))
     if stage:
         q = q.filter(Deal.stage == stage)
+    if unassigned:
+        q = q.filter(Deal.owner_id.is_(None))
     can_view = can_view_financials(db, user)
     return [_to_out(db, d, user, can_view) for d in q.order_by(Deal.created_at.desc()).all()]
 
@@ -61,10 +74,12 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
 
 
 @router.post("", response_model=DealOut,
-            summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload. A service-account-authenticated create leaves the deal unassigned/ownerless instead (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
+            summary="Create a deal", description="owner_id is always set server-side, never accepted directly from the payload -- the one lever a client has over it is `unassigned` (default false): false means the creator becomes owner (existing behavior), true means owner_id stays None and the deal sits in the shared inbox (D1). A service-account-authenticated create always leaves the deal unassigned/ownerless regardless of this flag (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
 def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
-    d = Deal(**payload.model_dump(), owner_id=owner_id_for(user), visibility=get_default_visibility(db))
+    data = payload.model_dump(exclude={"unassigned"})
+    owner_id = None if payload.unassigned else owner_id_for(user)
+    d = Deal(**data, owner_id=owner_id, visibility=get_default_visibility(db))
     db.add(d)
     db.flush()
     log_event(db, "deal", d.id, "created", user)
@@ -76,14 +91,16 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
 
 
 @router.put("/{deal_id}", response_model=DealOut,
-           summary="Update a deal", description="Full replace of the editable fields. Logs a stage_changed event if stage differs from before; no other transition guard.")
+           summary="Update a deal", description="Full replace of the editable fields. Logs a stage_changed event if stage differs from before. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first.")
 def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
-    for k, v in payload.model_dump().items():
+    if payload.stage != old_stage:
+        _check_owner_required(d, payload.stage)
+    for k, v in payload.model_dump(exclude={"unassigned"}).items():
         setattr(d, k, v)
     if d.stage != old_stage:
         log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
@@ -93,13 +110,15 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
 
 
 @router.patch("/{deal_id}/stage", response_model=DealOut,
-             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Any stage can move to any other stage; there is no transition guard. Logs a stage_changed event.")
+             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first. Otherwise any stage can move to any other stage; no other transition guard. Logs a stage_changed event.")
 def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
                  user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
+    if payload.stage != old_stage:
+        _check_owner_required(d, payload.stage)
     d.stage = payload.stage
     d.probability = STAGE_PROBABILITY.get(payload.stage, d.probability)
     if d.stage != old_stage:
@@ -120,6 +139,47 @@ def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Dep
     d.visibility = payload.visibility
     if d.visibility != old_visibility:
         log_event(db, "deal", d.id, "visibility_changed", user, from_value=old_visibility, to_value=d.visibility)
+    db.commit()
+    db.refresh(d)
+    return _to_out(db, d, user)
+
+
+@router.patch("/{deal_id}/claim", response_model=DealOut,
+             summary="Claim an unassigned deal", description="Sets the caller as owner of a deal currently sitting in the shared inbox (owner_id IS NULL) and records claimed_at. Logs a claimed event. 400 if the deal already has an owner -- use PATCH /owner (reassign_owner capability) to reassign an already-owned deal instead.")
+def claim_deal(deal_id: str, db: Session = Depends(get_db),
+              user: User = Depends(require_capability("manage_deals"))):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
+        raise HTTPException(status_code=404, detail="Deal not found")
+    if d.owner_id:
+        raise HTTPException(status_code=400, detail="Deal already has an owner")
+    if not isinstance(user, User):
+        raise HTTPException(status_code=400, detail="A service account cannot claim ownership of a deal")
+    d.owner_id = user.id
+    d.claimed_at = datetime.now(timezone.utc)
+    log_event(db, "deal", d.id, "claimed", user, to_value=user.id)
+    add_member(db, "deal", d.id, user.id, added_by=user)
+    db.commit()
+    db.refresh(d)
+    return _to_out(db, d, user)
+
+
+@router.patch("/{deal_id}/owner", response_model=DealOut,
+             summary="Reassign a deal's owner", description="Explicitly set a deal's owner to a different user, unlike /claim (which only works on an unassigned deal and always sets the caller). Requires reassign_owner. Logs an owner_changed event and auto-tags the new owner as a member.")
+def reassign_deal_owner(deal_id: str, payload: OwnerUpdate, db: Session = Depends(get_db),
+                        user: User = Depends(require_capability("reassign_owner"))):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
+        raise HTTPException(status_code=404, detail="Deal not found")
+    target = db.query(User).filter(User.id == payload.owner_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    old_owner = d.owner_id
+    d.owner_id = target.id
+    if not d.claimed_at:
+        d.claimed_at = datetime.now(timezone.utc)
+    log_event(db, "deal", d.id, "owner_changed", user, from_value=old_owner, to_value=target.id)
+    add_member(db, "deal", d.id, target.id, added_by=user)
     db.commit()
     db.refresh(d)
     return _to_out(db, d, user)
