@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, User
 from schemas import DealCreate, DealOut, StageUpdate, ActivityOut
-from auth import get_current_user, require_write
+from auth import get_current_user, require_capability
 from utils import log_event
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -54,7 +54,7 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
 @router.post("", response_model=DealOut,
             summary="Create a deal", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_deal(payload: DealCreate, db: Session = Depends(get_db),
-                user: User = Depends(require_write)):
+                user: User = Depends(require_capability("manage_deals"))):
     d = Deal(**payload.model_dump(), owner_id=user.id)
     db.add(d)
     db.flush()
@@ -67,7 +67,7 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
 @router.put("/{deal_id}", response_model=DealOut,
            summary="Update a deal", description="Full replace of the editable fields. Logs a stage_changed event if stage differs from before; no other transition guard.")
 def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db),
-                user: User = Depends(require_write)):
+                user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -84,7 +84,7 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
 @router.patch("/{deal_id}/stage", response_model=DealOut,
              summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Any stage can move to any other stage; there is no transition guard. Logs a stage_changed event.")
 def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
-                 user: User = Depends(require_write)):
+                 user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -101,7 +101,7 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
 @router.delete("/{deal_id}",
               summary="Delete a deal", description="Hard delete; nulls out deal_id on any activities that referenced it first. Logs a deleted event.")
 def delete_deal(deal_id: str, db: Session = Depends(get_db),
-                user: User = Depends(require_write)):
+                user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Deal not found")

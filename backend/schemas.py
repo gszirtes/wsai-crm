@@ -221,5 +221,23 @@ class SettingUpdate(BaseModel):
     openrouter_model: Optional[str] = None
 
 
+# ---------- Capability matrix (Phase 1 access control) ----------
+class RoleCapabilities(BaseModel):
+    view_financials: bool
+    manage_deals: bool
+    manage_projects: bool
+    invite_members: bool
+    set_visibility: bool
+    reassign_owner: bool
+    view_all_reports: bool
+
+
+class CapabilityMatrix(BaseModel):
+    admin: RoleCapabilities
+    manager: RoleCapabilities
+    user: RoleCapabilities
+    guest: RoleCapabilities
+
+
 class LocaleUpdate(BaseModel):
     locale: Literal["en", "hu"]

@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
-from schemas import SettingUpdate
+from schemas import SettingUpdate, CapabilityMatrix
 from auth import require_role
 from ai_service import get_setting, set_setting, encrypt_value, get_model
+from capabilities import get_capability_matrix, set_capability_matrix
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -31,3 +32,18 @@ def update_settings(payload: SettingUpdate, db: Session = Depends(get_db),
         "openrouter_configured": bool(get_setting(db, "openrouter_api_key")),
         "openrouter_model": get_model(db),
     }
+
+
+@router.get("/capabilities", response_model=CapabilityMatrix, summary="Get capability matrix",
+           description="Effective per-role capability matrix -- stored settings merged over coded defaults, so every role/capability is always present. manage_users/configure_permissions are not part of this: those stay fixed to admin. Admin only.")
+def get_capabilities(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
+    return get_capability_matrix(db)
+
+
+@router.put("/capabilities", response_model=CapabilityMatrix, summary="Update capability matrix",
+           description="Full replace of the per-role capability matrix (all 4 roles x 7 capabilities required). Admin only.")
+def update_capabilities(payload: CapabilityMatrix, db: Session = Depends(get_db),
+                        _: User = Depends(require_role("admin"))):
+    matrix = payload.model_dump()
+    set_capability_matrix(db, matrix)
+    return matrix

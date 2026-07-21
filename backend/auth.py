@@ -6,6 +6,7 @@ from fastapi import Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
+from capabilities import has_capability
 
 JWT_ALGORITHM = "HS256"
 
@@ -95,3 +96,19 @@ def require_write(user: User = Depends(get_current_user)) -> User:
     if user.role == "guest":
         raise HTTPException(status_code=403, detail="Guests have read-only access")
     return user
+
+
+def require_capability(capability: str):
+    """Gate an endpoint on the admin-configurable capability matrix
+    (capabilities.py), not the fixed role hierarchy. This is the deciding
+    layer wherever a capability applies (Phase 1 authz-precedence rule) --
+    it replaces require_role/require_write on the specific routes a
+    capability covers (deal/project writes, financial visibility, member
+    invites, visibility changes, aggregated reports), while routes outside
+    that bounded set keep the plain role checks unchanged.
+    """
+    def checker(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        if not has_capability(db, user.role, capability):
+            raise HTTPException(status_code=403, detail=f"Missing capability: {capability}")
+        return user
+    return checker

@@ -6,7 +6,7 @@ from database import get_db
 from models import Project, TimeEntry, Activity, Company, Contact, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
                      ActivityOut)
-from auth import get_current_user, require_write
+from auth import get_current_user, require_write, require_capability
 from utils import logged_hours_for, log_event
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -110,7 +110,7 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
 @router.post("", response_model=ProjectOut,
             summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload.")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
-                   user: User = Depends(require_write)):
+                   user: User = Depends(require_capability("manage_projects"))):
     p = Project(**payload.model_dump(), owner_id=user.id)
     db.add(p)
     db.flush()
@@ -123,7 +123,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
 @router.put("/{project_id}", response_model=ProjectOut,
            summary="Update a project", description="Full replace of the editable fields. Logs a status_changed event if status differs from before; no other transition guard.")
 def update_project(project_id: str, payload: ProjectCreate, db: Session = Depends(get_db),
-                   user: User = Depends(require_write)):
+                   user: User = Depends(require_capability("manage_projects"))):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -140,7 +140,7 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
 @router.delete("/{project_id}",
               summary="Delete a project", description="Hard delete; also deletes all of the project's time entries. Logs a deleted event.")
 def delete_project(project_id: str, db: Session = Depends(get_db),
-                   user: User = Depends(require_write)):
+                   user: User = Depends(require_capability("manage_projects"))):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")

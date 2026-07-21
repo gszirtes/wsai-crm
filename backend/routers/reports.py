@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import TimeEntry, Project, User
-from auth import require_role
+from auth import require_capability
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -18,9 +18,9 @@ def period_start(period: str) -> datetime:
 
 
 @router.get("/utilization", summary="Get team utilization report",
-           description="Per-user total/billable hours, billable amount, and utilization % for the current week or month. Manager+ only.")
+           description="Per-user total/billable hours, billable amount, and utilization % for the current week or month. Requires view_all_reports (this shows everyone's hours, not just the caller's own).")
 def utilization(period: str = "week", db: Session = Depends(get_db),
-                _: User = Depends(require_role("manager"))):
+                _: User = Depends(require_capability("view_all_reports"))):
     start = period_start(period)
     entries = db.query(TimeEntry).filter(TimeEntry.entry_date >= start).all()
     rates = {p.id: (p.hourly_rate or 0) for p in db.query(Project).all()}

@@ -94,3 +94,57 @@ class TestActivityPutCompletedChangePhase0Gap:
             assert not [e for e in events if e["event_type"] == "status_changed"]
         finally:
             admin_client.delete(f"{base_url}/api/activities/{a['id']}")
+
+
+class TestCapabilityMatrix:
+    def test_get_capabilities_admin_only(self, user_client, guest_client, base_url):
+        for client in (user_client, guest_client):
+            r = client.get(f"{base_url}/api/settings/capabilities")
+            assert r.status_code == 403
+
+    def test_get_capabilities_defaults(self, admin_client, base_url):
+        r = admin_client.get(f"{base_url}/api/settings/capabilities")
+        assert r.status_code == 200, r.text
+        m = r.json()
+        for role in ("admin", "manager"):
+            assert all(m[role].values()), f"{role} should default to all capabilities true"
+        assert m["guest"]["view_financials"] is False
+        assert m["user"]["manage_deals"] is True
+
+    def test_put_capabilities_requires_full_matrix(self, admin_client, base_url):
+        r = admin_client.put(f"{base_url}/api/settings/capabilities", json={"admin": {"view_financials": True}})
+        assert r.status_code == 422
+
+    def test_put_capabilities_non_admin_forbidden(self, admin_client, user_client, base_url):
+        current = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        r = user_client.put(f"{base_url}/api/settings/capabilities", json=current)
+        assert r.status_code == 403
+
+    def test_revoking_manage_deals_blocks_user_then_restoring_allows_again(self, admin_client, user_client, base_url):
+        original = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        try:
+            revoked = json_copy = {**original, "user": {**original["user"], "manage_deals": False}}
+            pr = admin_client.put(f"{base_url}/api/settings/capabilities", json=revoked)
+            assert pr.status_code == 200, pr.text
+
+            r = user_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 should be blocked"})
+            assert r.status_code == 403, r.text
+        finally:
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
+
+        r = user_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 restored"})
+        assert r.status_code == 200, r.text
+        admin_client.delete(f"{base_url}/api/deals/{r.json()['id']}")
+
+    def test_view_all_reports_capability_gates_utilization(self, admin_client, user_client, base_url):
+        # Default: user lacks view_all_reports -> 403 (unchanged behavior from require_role("manager"))
+        r = user_client.get(f"{base_url}/api/reports/utilization")
+        assert r.status_code == 403
+        original = admin_client.get(f"{base_url}/api/settings/capabilities").json()
+        try:
+            granted = {**original, "user": {**original["user"], "view_all_reports": True}}
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=granted)
+            r = user_client.get(f"{base_url}/api/reports/utilization")
+            assert r.status_code == 200, r.text
+        finally:
+            admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
