@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
@@ -9,6 +10,9 @@ from ai_service import get_openrouter_key, get_model, run_ai_command
 from utils import log_event, owner_id_for
 from capabilities import has_capability, get_default_visibility
 from membership import add_member
+from rate_limit import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -120,8 +124,9 @@ CAPABILITY_BY_ACTION = {"create_deal": "manage_deals", "create_project": "manage
 
 
 @router.post("/command", summary="Run an AI command",
-            description="Send free-form text to the configured OpenRouter model, which returns a structured {action, data, message}. Enum fields in `data` are re-validated server-side before any write (never trusted from the LLM). Write actions (create_*) are blocked for guests; create_deal/create_project additionally require manage_deals/manage_projects, same as the direct API -- the capability matrix is the deciding layer regardless of which surface triggers the write.")
-async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
+            description="Send free-form text to the configured OpenRouter model, which returns a structured {action, data, message}. Enum fields in `data` are re-validated server-side before any write (never trusted from the LLM). Write actions (create_*) are blocked for guests; create_deal/create_project additionally require manage_deals/manage_projects, same as the direct API -- the capability matrix is the deciding layer regardless of which surface triggers the write. Rate-limited: each call makes a real outbound OpenRouter request.")
+@limiter.limit("20/minute")
+async def ai_command(request: Request, payload: AICommandRequest, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     api_key = get_openrouter_key(db)
     if not api_key:
@@ -131,7 +136,12 @@ async def ai_command(payload: AICommandRequest, db: Session = Depends(get_db),
     try:
         result = await run_ai_command(api_key, model, payload.command, _build_context(db))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        # The upstream response body / internal exception text can contain
+        # provider-side detail that shouldn't reach the client verbatim --
+        # log it server-side and return a generic message instead.
+        logger.error("AI command failed for user %s: %s", user.id, e)
+        raise HTTPException(status_code=502,
+                            detail="The AI service is temporarily unavailable. Please try again.")
 
     action = result.get("action", "answer")
     data = result.get("data", {}) or {}
