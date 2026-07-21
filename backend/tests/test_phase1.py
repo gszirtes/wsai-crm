@@ -11,6 +11,14 @@ def _events(client, base_url, entity_type, entity_id):
     return r.json()
 
 
+def _user_id_by_email(client, base_url, email):
+    r = client.get(f"{base_url}/api/users/directory")
+    assert r.status_code == 200, r.text
+    match = [u for u in r.json() if u["email"] == email]
+    assert match, f"seeded user {email} not found in directory"
+    return match[0]["id"]
+
+
 class TestDeletedEventPhase0Gap:
     """Phase 0 wired log_event() into create/status/stage paths but not delete
     -- caught during Phase 1's own re-review of Phase 0, per the plan's
@@ -293,5 +301,92 @@ class TestEntityMembership:
         try:
             ir = admin_client.post(f"{base_url}/api/deals/{deal_id}/members", json={"user_id": "does-not-exist"})
             assert ir.status_code == 404
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+
+class TestVisibilityFiltering:
+    """1.4: visibility scoping actually enforced on read (and write) paths,
+    not just stored on the row. All private-deal scenarios here use the
+    `user` role -- admin/manager always see everything (FULL_VISIBILITY_ROLES)
+    so they wouldn't exercise the filter at all."""
+
+    def _make_private_deal(self, admin_client, base_url, title="TEST_p1 private"):
+        r = admin_client.post(f"{base_url}/api/deals", json={"title": title})
+        deal_id = r.json()["id"]
+        pr = admin_client.patch(f"{base_url}/api/deals/{deal_id}/visibility", json={"visibility": "private"})
+        assert pr.status_code == 200, pr.text
+        return deal_id
+
+    def test_private_deal_excluded_from_list_for_non_member(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url)
+        try:
+            ids = [d["id"] for d in user_client.get(f"{base_url}/api/deals").json()]
+            assert deal_id not in ids
+            ids_admin = [d["id"] for d in admin_client.get(f"{base_url}/api/deals").json()]
+            assert deal_id in ids_admin
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_private_deal_404_for_non_member_on_get_and_detail(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url)
+        try:
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}").status_code == 404
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}/detail").status_code == 404
+            assert admin_client.get(f"{base_url}/api/deals/{deal_id}").status_code == 200
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_invited_member_can_then_see_private_deal(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url)
+        try:
+            user_id = _user_id_by_email(admin_client, base_url, "user@wespeak.ai")
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}").status_code == 404
+            ir = admin_client.post(f"{base_url}/api/deals/{deal_id}/members", json={"user_id": user_id})
+            assert ir.status_code == 200, ir.text
+            assert user_client.get(f"{base_url}/api/deals/{deal_id}").status_code == 200
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_write_endpoints_404_for_non_member_even_with_manage_deals(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url)
+        try:
+            r = user_client.patch(f"{base_url}/api/deals/{deal_id}/stage", json={"stage": "qualified"})
+            assert r.status_code == 404, "manage_deals alone shouldn't reach a deal the user can't see"
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_company_detail_hides_private_deal_from_non_member(self, admin_client, user_client, base_url):
+        cr = admin_client.post(f"{base_url}/api/companies", json={"name": "TEST_p1 vis co"})
+        company_id = cr.json()["id"]
+        dr = admin_client.post(f"{base_url}/api/deals", json={"title": "TEST_p1 co deal", "company_id": company_id})
+        deal_id = dr.json()["id"]
+        admin_client.patch(f"{base_url}/api/deals/{deal_id}/visibility", json={"visibility": "private"})
+        try:
+            as_user = user_client.get(f"{base_url}/api/companies/{company_id}/detail").json()
+            assert deal_id not in [d["id"] for d in as_user["deals"]]
+            as_admin = admin_client.get(f"{base_url}/api/companies/{company_id}/detail").json()
+            assert deal_id in [d["id"] for d in as_admin["deals"]]
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+            admin_client.delete(f"{base_url}/api/companies/{company_id}")
+
+    def test_dashboard_pipeline_value_excludes_invisible_private_deal(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url, title="TEST_p1 dash")
+        admin_client.put(f"{base_url}/api/deals/{deal_id}", json={"title": "TEST_p1 dash", "value": 999999, "stage": "qualified"})
+        try:
+            admin_stats = admin_client.get(f"{base_url}/api/dashboard/stats").json()
+            user_stats = user_client.get(f"{base_url}/api/dashboard/stats").json()
+            assert admin_stats["pipeline_value"] >= user_stats["pipeline_value"] + 999999
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+
+    def test_export_deals_csv_excludes_invisible_private_deal(self, admin_client, user_client, base_url):
+        deal_id = self._make_private_deal(admin_client, base_url, title="TEST_p1_UNIQUE_EXPORT_TITLE")
+        try:
+            user_csv = user_client.get(f"{base_url}/api/export/deals.csv").text
+            admin_csv = admin_client.get(f"{base_url}/api/export/deals.csv").text
+            assert "TEST_p1_UNIQUE_EXPORT_TITLE" not in user_csv
+            assert "TEST_p1_UNIQUE_EXPORT_TITLE" in admin_csv
         finally:
             admin_client.delete(f"{base_url}/api/deals/{deal_id}")

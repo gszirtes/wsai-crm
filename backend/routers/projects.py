@@ -10,6 +10,7 @@ from auth import get_current_user, require_write, require_capability
 from utils import logged_hours_for, log_event
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
+from visibility import visibility_filter, can_see
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -39,10 +40,10 @@ def to_out(db: Session, p: Project) -> ProjectOut:
 
 
 @router.get("", response_model=list[ProjectOut],
-           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header.")
+           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header. Private projects only appear for admin/manager, their owner, or invited members.")
 def list_projects(response: Response, status: str = "", limit: int = 20, offset: int = 0,
-                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    q = db.query(Project)
+                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(Project).filter(visibility_filter(db, Project, "project", user))
     if status:
         q = q.filter(Project.status == status)
     total = q.count()
@@ -67,19 +68,19 @@ def list_projects(response: Response, status: str = "", limit: int = 20, offset:
 @router.get("/{project_id}", response_model=ProjectOut,
            summary="Get a project", description="Get a single project by id, including computed logged_hours and health.")
 def get_project(project_id: str, db: Session = Depends(get_db),
-                _: User = Depends(get_current_user)):
+                user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     return to_out(db, p)
 
 
 @router.get("/{project_id}/detail",
-           summary="Get project with related records", description="Project plus time entries, billable amount, health, and activity timeline.")
+           summary="Get project with related records", description="Project plus time entries, billable amount, health, and activity timeline. 404 if it's private and this user isn't admin/manager/owner/member.")
 def project_detail(project_id: str, db: Session = Depends(get_db),
-                   _: User = Depends(get_current_user)):
+                   user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     logged = logged_hours_for(db, p.id)
     entries = db.query(TimeEntry).filter(TimeEntry.project_id == project_id) \
@@ -128,7 +129,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
 def update_project(project_id: str, payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_capability("manage_projects"))):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     old_status = p.status
     for k, v in payload.model_dump().items():
@@ -145,7 +146,7 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
 def update_visibility(project_id: str, payload: VisibilityUpdate, db: Session = Depends(get_db),
                       user: User = Depends(require_capability("set_visibility"))):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     old_visibility = p.visibility
     p.visibility = payload.visibility
@@ -159,8 +160,9 @@ def update_visibility(project_id: str, payload: VisibilityUpdate, db: Session = 
 @router.get("/{project_id}/members",
            summary="List project members", description="Members of a project (the owner is auto-included from creation). Membership only matters for `private` projects.")
 def list_project_members(project_id: str, db: Session = Depends(get_db),
-                         _: User = Depends(get_current_user)):
-    if not db.query(Project).filter(Project.id == project_id).first():
+                         user: User = Depends(get_current_user)):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     rows = list_members(db, "project", project_id)
     users = {u.id: u for u in db.query(User).filter(User.id.in_([m.user_id for m in rows])).all()}
@@ -176,7 +178,8 @@ def list_project_members(project_id: str, db: Session = Depends(get_db),
             summary="Invite a member", description="Add a user as a member of this project, granting them access if it's `private`. Requires invite_members.")
 def add_project_member(project_id: str, payload: MemberAdd, db: Session = Depends(get_db),
                        user: User = Depends(require_capability("invite_members"))):
-    if not db.query(Project).filter(Project.id == project_id).first():
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     if not db.query(User).filter(User.id == payload.user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -190,7 +193,7 @@ def add_project_member(project_id: str, payload: MemberAdd, db: Session = Depend
 def remove_project_member(project_id: str, user_id: str, db: Session = Depends(get_db),
                           user: User = Depends(require_capability("invite_members"))):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     if p.owner_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot remove the owner from membership")
@@ -204,7 +207,7 @@ def remove_project_member(project_id: str, user_id: str, db: Session = Depends(g
 def delete_project(project_id: str, db: Session = Depends(get_db),
                    user: User = Depends(require_capability("manage_projects"))):
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
+    if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     db.query(TimeEntry).filter(TimeEntry.project_id == project_id).delete()
     log_event(db, "project", p.id, "deleted", user)

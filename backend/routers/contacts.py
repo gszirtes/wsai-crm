@@ -5,6 +5,7 @@ from models import Contact, Company, Deal, Activity, User
 from schemas import ContactCreate, ContactOut, DealOut, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event
+from visibility import visibility_filter
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -32,13 +33,13 @@ def list_contacts(search: str = "", status: str = "", company_id: str = "",
 
 
 @router.get("/{contact_id}/detail",
-           summary="Get contact with related records", description="Contact plus its deals and activity timeline.")
+           summary="Get contact with related records", description="Contact plus its deals and activity timeline. The deals list is visibility-filtered (private ones only show for admin/manager/owner/member) -- the contact record itself is not visibility-scoped.")
 def contact_detail(contact_id: str, db: Session = Depends(get_db),
-                   _: User = Depends(get_current_user)):
+                   user: User = Depends(get_current_user)):
     c = db.query(Contact).filter(Contact.id == contact_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact not found")
-    deals = db.query(Deal).filter(Deal.contact_id == contact_id) \
+    deals = db.query(Deal).filter(Deal.contact_id == contact_id, visibility_filter(db, Deal, "deal", user)) \
         .order_by(Deal.created_at.desc()).all()
     activities = db.query(Activity).filter(Activity.contact_id == contact_id) \
         .order_by(Activity.created_at.desc()).all()

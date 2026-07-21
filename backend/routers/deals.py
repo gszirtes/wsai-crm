@@ -7,6 +7,7 @@ from auth import get_current_user, require_capability
 from utils import log_event
 from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
+from visibility import visibility_filter, can_see
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -15,21 +16,21 @@ STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
 
 
 @router.get("", response_model=list[DealOut],
-           summary="List deals", description="List deals, optionally filtered by stage, newest first.")
+           summary="List deals", description="List deals, optionally filtered by stage, newest first. Private deals only appear for admin/manager, their owner, or invited members.")
 def list_deals(stage: str = "", db: Session = Depends(get_db),
-               _: User = Depends(get_current_user)):
-    q = db.query(Deal)
+               user: User = Depends(get_current_user)):
+    q = db.query(Deal).filter(visibility_filter(db, Deal, "deal", user))
     if stage:
         q = q.filter(Deal.stage == stage)
     return q.order_by(Deal.created_at.desc()).all()
 
 
 @router.get("/{deal_id}/detail",
-           summary="Get deal with related records", description="Deal plus its company/contact names and activity timeline.")
+           summary="Get deal with related records", description="Deal plus its company/contact names and activity timeline. 404 (not just for nonexistent deals) if the deal is private and this user isn't admin/manager/owner/member.")
 def deal_detail(deal_id: str, db: Session = Depends(get_db),
-                _: User = Depends(get_current_user)):
+                user: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     company = db.query(Company).filter(Company.id == d.company_id).first() if d.company_id else None
     contact = db.query(Contact).filter(Contact.id == d.contact_id).first() if d.contact_id else None
@@ -44,11 +45,11 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
 
 
 @router.get("/{deal_id}", response_model=DealOut,
-           summary="Get a deal", description="Get a single deal by id.")
+           summary="Get a deal", description="Get a single deal by id. 404 if it's private and this user isn't admin/manager/owner/member.")
 def get_deal(deal_id: str, db: Session = Depends(get_db),
-             _: User = Depends(get_current_user)):
+             user: User = Depends(get_current_user)):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     return d
 
@@ -72,7 +73,7 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
 def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
     for k, v in payload.model_dump().items():
@@ -89,7 +90,7 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
 def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
                  user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
     d.stage = payload.stage
@@ -106,7 +107,7 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
 def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Depends(get_db),
                       user: User = Depends(require_capability("set_visibility"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     old_visibility = d.visibility
     d.visibility = payload.visibility
@@ -120,8 +121,9 @@ def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Dep
 @router.get("/{deal_id}/members",
            summary="List deal members", description="Members of a deal (the owner is auto-included from creation). Membership only matters for `private` deals -- on a `public` deal it's informational.")
 def list_deal_members(deal_id: str, db: Session = Depends(get_db),
-                      _: User = Depends(get_current_user)):
-    if not db.query(Deal).filter(Deal.id == deal_id).first():
+                      user: User = Depends(get_current_user)):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     rows = list_members(db, "deal", deal_id)
     users = {u.id: u for u in db.query(User).filter(User.id.in_([m.user_id for m in rows])).all()}
@@ -137,7 +139,8 @@ def list_deal_members(deal_id: str, db: Session = Depends(get_db),
             summary="Invite a member", description="Add a user as a member of this deal, granting them access if it's `private`. Requires invite_members.")
 def add_deal_member(deal_id: str, payload: MemberAdd, db: Session = Depends(get_db),
                     user: User = Depends(require_capability("invite_members"))):
-    if not db.query(Deal).filter(Deal.id == deal_id).first():
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     if not db.query(User).filter(User.id == payload.user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -151,7 +154,7 @@ def add_deal_member(deal_id: str, payload: MemberAdd, db: Session = Depends(get_
 def remove_deal_member(deal_id: str, user_id: str, db: Session = Depends(get_db),
                        user: User = Depends(require_capability("invite_members"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     if d.owner_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot remove the owner from membership")
@@ -165,7 +168,7 @@ def remove_deal_member(deal_id: str, user_id: str, db: Session = Depends(get_db)
 def delete_deal(deal_id: str, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
+    if not d or not can_see(db, "deal", d, user):
         raise HTTPException(status_code=404, detail="Deal not found")
     # Null out child references before deleting
     db.query(Activity).filter(Activity.deal_id == deal_id).update({Activity.deal_id: None})

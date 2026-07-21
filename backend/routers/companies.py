@@ -5,6 +5,7 @@ from models import Company, Contact, Deal, Project, Activity, User
 from schemas import CompanyCreate, CompanyOut, ContactOut, DealOut, ProjectOut
 from auth import get_current_user, require_write
 from utils import log_event
+from visibility import visibility_filter
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -20,15 +21,16 @@ def list_companies(search: str = "", db: Session = Depends(get_db),
 
 
 @router.get("/{company_id}/detail",
-           summary="Get company with related records", description="Company plus its contacts, deals, and projects.")
+           summary="Get company with related records", description="Company plus its contacts, deals, and projects. The deals/projects lists are visibility-filtered (private ones only show for admin/manager/owner/member) -- the company record itself is not visibility-scoped.")
 def company_detail(company_id: str, db: Session = Depends(get_db),
-                   _: User = Depends(get_current_user)):
+                   user: User = Depends(get_current_user)):
     c = db.query(Company).filter(Company.id == company_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Company not found")
     contacts = db.query(Contact).filter(Contact.company_id == company_id).all()
-    deals = db.query(Deal).filter(Deal.company_id == company_id).all()
-    projects = db.query(Project).filter(Project.company_id == company_id).all()
+    deals = db.query(Deal).filter(Deal.company_id == company_id, visibility_filter(db, Deal, "deal", user)).all()
+    projects = db.query(Project).filter(Project.company_id == company_id,
+                                        visibility_filter(db, Project, "project", user)).all()
     return {
         "company": CompanyOut.model_validate(c).model_dump(),
         "contacts": [ContactOut.model_validate(x).model_dump() for x in contacts],
