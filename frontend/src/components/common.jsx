@@ -78,6 +78,13 @@ const STATUS_COLORS = {
   on_track: "bg-success/15 text-success",
   at_risk: "bg-amber-500/15 text-amber-600",
   over_budget: "bg-danger/15 text-danger",
+  in_progress: "bg-blue-500/15 text-blue-500",
+  client_review: "bg-amber-500/15 text-amber-600",
+  accepted: "bg-success/15 text-success",
+  not_due: "bg-slate-500/15 text-slate-500",
+  invoiceable: "bg-amber-500/15 text-amber-600",
+  invoiced: "bg-blue-500/15 text-blue-500",
+  paid: "bg-success/15 text-success",
 };
 
 export function Badge({ value, label, className = "" }) {

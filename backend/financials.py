@@ -1,9 +1,28 @@
 from capabilities import has_capability
 
 # The plan's money-field list (BL-3): Deal.value, Project.budget/hourly_rate,
-# milestone-amount (no Milestone model exists yet -- that's a later phase).
+# Milestone.amount (Phase 4).
 DEAL_MONEY_FIELDS = ("value",)
 PROJECT_MONEY_FIELDS = ("budget", "hourly_rate")
+MILESTONE_MONEY_FIELDS = ("amount",)
+
+# Plan 4.2: reports never sum across currencies -- every money aggregate is
+# broken out per currency instead. Fixed pair (matches schemas.Currency), not
+# open-ended, so aggregation code can always report a full {EUR, HUF} shape.
+CURRENCIES = ("EUR", "HUF")
+
+
+def zero_by_currency() -> dict:
+    return {c: 0.0 for c in CURRENCIES}
+
+
+def add_currency(bucket: dict, currency: str, amount: float):
+    """Add `amount` into `bucket[currency]` if `currency` is one we track,
+    silently dropping anything else -- shared by every per-currency
+    aggregation loop (dashboard.py, reports.py) instead of each hand-rolling
+    the same `if currency in bucket: bucket[currency] += amount` check."""
+    if currency in bucket:
+        bucket[currency] += amount
 
 
 def can_view_financials(db, user) -> bool:
@@ -36,3 +55,7 @@ def mask_deal_out(db, user, out, can_view=None):
 
 def mask_project_out(db, user, out, can_view=None):
     return _mask(db, user, out, PROJECT_MONEY_FIELDS, can_view)
+
+
+def mask_milestone_out(db, user, out, can_view=None):
+    return _mask(db, user, out, MILESTONE_MONEY_FIELDS, can_view)

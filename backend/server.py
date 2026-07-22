@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -16,7 +17,7 @@ from auth import hash_password
 from rate_limit import limiter
 from routers import (auth_router, users, companies, contacts, deals, projects,
                      activities, dashboard, ai_router, settings_router, data_io,
-                     reports, notifications, event_logs, service_accounts)
+                     reports, notifications, event_logs, service_accounts, milestones)
 
 app = FastAPI(title="wespeak.ai CRM")
 
@@ -40,8 +41,15 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # jsonable_encoder, not a raw json.dumps (JSONResponse.render does that
+    # internally) -- a custom @model_validator raising a plain ValueError
+    # (e.g. schemas.py's amount-XOR-percentage check) puts the actual
+    # exception object in errors()[i]["ctx"]["error"], which plain json.dumps
+    # can't serialize. FastAPI's own default handler already goes through
+    # jsonable_encoder for this reason; this handler replaced that default,
+    # so it needs to do the same.
     return JSONResponse(status_code=422,
-                        content={"detail": exc.errors(), "status_code": 422,
+                        content={"detail": jsonable_encoder(exc.errors()), "status_code": 422,
                                  "path": request.url.path})
 
 
@@ -66,6 +74,7 @@ app.include_router(companies.router)
 app.include_router(contacts.router)
 app.include_router(deals.router)
 app.include_router(projects.router)
+app.include_router(milestones.router)
 app.include_router(activities.router)
 app.include_router(dashboard.router)
 app.include_router(ai_router.router)

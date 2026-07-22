@@ -113,6 +113,29 @@ class Project(Base):
     company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deal_id = Column(String, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class Milestone(Base):
+    """Client-facing billing unit for a fixed-price project (Phase 4),
+    replacing ad-hoc hourly invoicing. work_status and payment_status are
+    independently settable and reversible in either direction -- "we shipped
+    it" and "we got paid for it" are different facts that don't always move
+    together (a client can pay a deposit before work starts, or delay
+    payment after acceptance).
+    """
+    __tablename__ = "milestones"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    order_index = Column(Integer, nullable=False, default=0)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    amount = Column(Float, nullable=True)
+    percentage = Column(Float, nullable=True)
+    work_status = Column(String, nullable=False, default="in_progress")  # in_progress, client_review, accepted
+    payment_status = Column(String, nullable=False, default="not_due")  # not_due, invoiceable, invoiced, paid
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

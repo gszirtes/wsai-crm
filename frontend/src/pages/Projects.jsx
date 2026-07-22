@@ -5,11 +5,16 @@ import { Plus, Pencil, Trash2, FolderKanban, Clock } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea, Pagination } from "../components/common";
+import { formatMoney, CURRENCIES } from "../format";
 
 const STATUSES = ["planning", "active", "on_hold", "completed", "cancelled"];
 const PRIORITIES = ["low", "medium", "high"];
+const MILESTONE_TEMPLATES = ["single_final", "deposit_final", "milestones"];
 const PAGE_SIZE = 12;
-const empty = { name: "", description: "", status: "planning", priority: "medium", budget: 0, estimated_hours: 0, hourly_rate: 0, currency: "EUR", company_id: "" };
+const empty = {
+  name: "", description: "", status: "planning", priority: "medium", budget: 0, estimated_hours: 0,
+  hourly_rate: 0, currency: "EUR", company_id: "", milestone_template: "single_final",
+};
 
 export default function Projects() {
   const { t } = useTranslation();
@@ -46,7 +51,6 @@ export default function Projects() {
     await api.delete(`/projects/${id}`); load();
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   return (
     <div className="space-y-5">
@@ -79,7 +83,7 @@ export default function Projects() {
               {p.description && <p className="text-sm text-muted mt-1 line-clamp-2">{p.description}</p>}
               <div className="flex items-center justify-between mt-4 text-sm">
                 <span className="text-muted flex items-center gap-1"><Clock size={13} />{p.logged_hours || 0}h / {p.estimated_hours || 0}h</span>
-                <span className="font-medium">{eur(p.budget)}</span>
+                <span className="font-medium">{formatMoney(p.budget, p.currency)}</span>
               </div>
               {writable && (
                 <div className="flex gap-1 mt-3 pt-3 border-t border-border">
@@ -111,8 +115,13 @@ export default function Projects() {
             <Select value={form.priority} onChange={set("priority")}>{PRIORITIES.map((s) => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}</Select>
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Field label={t("project.budget")}><Input type="number" value={form.budget} onChange={set("budget")} /></Field>
+          <Field label={t("deal.currency")}>
+            <Select data-testid="project-currency" value={form.currency || "EUR"} onChange={set("currency")}>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
           <Field label={t("project.company")}>
             <Select value={form.company_id || ""} onChange={set("company_id")}>
               <option value="">—</option>
@@ -124,6 +133,13 @@ export default function Projects() {
           <Field label={t("time.estimated") + " (" + t("time.hours").toLowerCase() + ")"}><Input data-testid="project-estimated-hours" type="number" value={form.estimated_hours} onChange={set("estimated_hours")} /></Field>
           <Field label={t("time.rate")}><Input data-testid="project-hourly-rate" type="number" value={form.hourly_rate} onChange={set("hourly_rate")} /></Field>
         </div>
+        {!editing && (
+          <Field label={t("milestone.template")}>
+            <Select data-testid="project-milestone-template" value={form.milestone_template} onChange={set("milestone_template")}>
+              {MILESTONE_TEMPLATES.map((mt) => <option key={mt} value={mt}>{t(`milestone.template_${mt}`)}</option>)}
+            </Select>
+          </Field>
+        )}
       </Modal>
     </div>
   );

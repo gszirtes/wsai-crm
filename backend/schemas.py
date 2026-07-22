@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Literal
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 # Allowed enum values
 DealStage = Literal["lead", "qualified", "proposal", "negotiation", "won", "lost"]
@@ -14,6 +14,9 @@ Visibility = Literal["public", "private"]
 DealSource = Literal["inbound", "outreach", "referral", "other"]
 BallInCourt = Literal["us", "them", "none"]
 LeadType = Literal["single", "double"]
+Currency = Literal["EUR", "HUF"]
+MilestoneWorkStatus = Literal["in_progress", "client_review", "accepted"]
+MilestonePaymentStatus = Literal["not_due", "invoiceable", "invoiced", "paid"]
 
 
 # ---------- Auth ----------
@@ -109,7 +112,7 @@ class ContactOut(ContactBase):
 class DealBase(BaseModel):
     title: str
     value: Optional[float] = 0
-    currency: Optional[str] = "EUR"
+    currency: Optional[Currency] = "EUR"
     stage: Optional[DealStage] = "lead"
     probability: Optional[int] = 10
     expected_close: Optional[datetime] = None
@@ -186,7 +189,7 @@ class ProjectBase(BaseModel):
     budget: Optional[float] = 0
     estimated_hours: Optional[float] = 0
     hourly_rate: Optional[float] = 0
-    currency: Optional[str] = "EUR"
+    currency: Optional[Currency] = "EUR"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     company_id: Optional[str] = None
@@ -194,12 +197,18 @@ class ProjectBase(BaseModel):
 
 
 class ProjectCreate(ProjectBase):
-    pass
+    # Create-time-only: which starter milestone set to pre-fill (plan 4.1).
+    # Not a Project column -- consumed once by create_project to seed
+    # Milestone rows, then the project has no further memory of which
+    # template it started from (the milestones themselves are freely
+    # editable afterward).
+    milestone_template: Optional[Literal["single_final", "deposit_final", "milestones"]] = "single_final"
 
 
 class ProjectOut(ProjectBase):
     id: str
     owner_id: Optional[str] = None
+    deal_id: Optional[str] = None
     visibility: Visibility = "public"
     created_at: Optional[datetime] = None
     logged_hours: Optional[float] = 0
@@ -207,6 +216,50 @@ class ProjectOut(ProjectBase):
 
     class Config:
         from_attributes = True
+
+
+class MilestoneBase(BaseModel):
+    name: str
+    order_index: Optional[int] = 0
+    due_date: Optional[datetime] = None
+    amount: Optional[float] = None
+    percentage: Optional[float] = None
+    work_status: Optional[MilestoneWorkStatus] = "in_progress"
+    payment_status: Optional[MilestonePaymentStatus] = "not_due"
+
+    @model_validator(mode="after")
+    def _amount_xor_percentage(self):
+        # D11: exactly one of amount/percentage must be set, never both,
+        # never neither -- a milestone with no way to size itself, or two
+        # conflicting ones, is a data-entry error, not a valid state.
+        if (self.amount is None) == (self.percentage is None):
+            raise ValueError("Exactly one of amount or percentage must be set")
+        return self
+
+
+class MilestoneCreate(MilestoneBase):
+    pass
+
+
+class MilestoneOut(MilestoneBase):
+    id: str
+    project_id: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MilestoneStatusUpdate(BaseModel):
+    work_status: Optional[MilestoneWorkStatus] = None
+    payment_status: Optional[MilestonePaymentStatus] = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self):
+        if self.work_status is None and self.payment_status is None:
+            raise ValueError("At least one of work_status or payment_status must be set")
+        return self
 
 
 class TimeEntryCreate(BaseModel):

@@ -378,7 +378,7 @@ class TestVisibilityFiltering:
         try:
             admin_stats = admin_client.get(f"{base_url}/api/dashboard/stats").json()
             user_stats = user_client.get(f"{base_url}/api/dashboard/stats").json()
-            assert admin_stats["pipeline_value"] >= user_stats["pipeline_value"] + 999999
+            assert admin_stats["pipeline_value"]["EUR"] >= user_stats["pipeline_value"]["EUR"] + 999999
         finally:
             admin_client.delete(f"{base_url}/api/deals/{deal_id}")
 
@@ -460,7 +460,7 @@ class TestFinancialMasking:
             stats = user_client.get(f"{base_url}/api/dashboard/stats").json()
             assert stats["pipeline_value"] is None
             assert stats["won_value"] is None
-            assert all(row["value"] is None for row in stats["deals_by_stage"])
+            assert all(row["value_by_currency"] is None for row in stats["deals_by_stage"])
         finally:
             self._restore(admin_client, base_url, original)
 
@@ -483,8 +483,8 @@ class TestFinancialMasking:
             granted = {**original, "user": {**original["user"], "view_all_reports": True, "view_financials": False}}
             admin_client.put(f"{base_url}/api/settings/capabilities", json=granted)
             body = user_client.get(f"{base_url}/api/reports/utilization").json()
-            assert body["totals"]["billable_amount"] is None
-            assert all(row["billable_amount"] is None for row in body["users"])
+            assert body["totals"]["billable_amount_by_currency"] is None
+            assert all(row["billable_amount_by_currency"] is None for row in body["users"])
         finally:
             admin_client.put(f"{base_url}/api/settings/capabilities", json=original)
 

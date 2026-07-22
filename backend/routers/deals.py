@@ -11,7 +11,7 @@ from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_deal_out, can_view_financials
-from deal_rules import check_owner_required
+from deal_rules import check_owner_required, create_project_from_won_deal
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -122,13 +122,15 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
         setattr(d, k, v)
     if d.stage != old_stage:
         log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
+        if d.stage == "won":
+            create_project_from_won_deal(db, d, user)
     db.commit()
     db.refresh(d)
     return _to_out(db, d, user)
 
 
 @router.patch("/{deal_id}/stage", response_model=DealOut,
-             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first. Otherwise any stage can move to any other stage; no other transition guard. Logs a stage_changed event.")
+             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first. Otherwise any stage can move to any other stage; no other transition guard. Logs a stage_changed event. Moving into `won` auto-creates a Project from the deal (4.3) -- idempotent, so re-triggering won doesn't spawn a second one.")
 def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
                  user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -141,6 +143,8 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
     d.probability = STAGE_PROBABILITY.get(payload.stage, d.probability)
     if d.stage != old_stage:
         log_event(db, "deal", d.id, "stage_changed", user, from_value=old_stage, to_value=d.stage)
+        if d.stage == "won":
+            create_project_from_won_deal(db, d, user)
     db.commit()
     db.refresh(d)
     return _to_out(db, d, user)

@@ -12,12 +12,12 @@ class TestUtilization:
         data = r.json()
         assert data["period"] == "week"
         assert "period_start" in data
-        assert "totals" in data and set(["total_hours", "billable_hours", "billable_amount"]).issubset(data["totals"].keys())
+        assert "totals" in data and set(["total_hours", "billable_hours", "billable_amount_by_currency"]).issubset(data["totals"].keys())
         assert "users" in data and isinstance(data["users"], list)
         # Each row has expected keys
         if data["users"]:
             row = data["users"][0]
-            for k in ("user_id", "name", "role", "total_hours", "billable_hours", "billable_amount", "utilization_pct"):
+            for k in ("user_id", "name", "role", "total_hours", "billable_hours", "billable_amount_by_currency", "utilization_pct"):
                 assert k in row
 
     def test_admin_can_get_utilization_month(self, admin_client, base_url):

@@ -1,12 +1,22 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from models import TimeEntry, EventLog, AppSetting, ServiceAccount
+from models import TimeEntry, Milestone, Project, EventLog, AppSetting, ServiceAccount
 
 
 def logged_hours_for(db: Session, project_id: str) -> float:
     """Total hours logged for a project across all time entries."""
     return float(db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
                  .filter(TimeEntry.project_id == project_id).scalar())
+
+
+def resolved_milestone_amount(milestone: Milestone, project: Project) -> float:
+    """A milestone's amount in its project's currency: either the flat
+    `amount` or `percentage`-of-`project.budget` (D11: exactly one of the two
+    is ever set). Shared by the milestones router (budget-mismatch warning)
+    and the cash-flow report so both compute this the same way."""
+    if milestone.amount is not None:
+        return milestone.amount
+    return (milestone.percentage or 0) / 100 * (project.budget or 0)
 
 
 def get_setting(db: Session, key: str):
