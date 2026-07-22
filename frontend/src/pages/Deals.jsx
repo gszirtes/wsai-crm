@@ -9,7 +9,12 @@ import { Button, Input, Select, Field, Modal, Badge, Spinner, Textarea } from ".
 
 const STAGES = ["lead", "qualified", "proposal", "negotiation", "won", "lost"];
 const SOURCES = ["inbound", "outreach", "referral", "other"];
-const empty = { title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "", source: "", unassigned: false };
+const LEAD_TYPES = ["single", "double"];
+const empty = {
+  title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "",
+  source: "", unassigned: false, lead_type: "single",
+  contract_company_id: "", contract_contact_id: "", referred_by_contact_id: "",
+};
 
 export default function Deals() {
   const { t } = useTranslation();
@@ -38,12 +43,22 @@ export default function Deals() {
   }, []);
 
   const openNew = () => { setForm(empty); setEditing(null); setModal(true); };
-  const openEdit = (d) => { setForm({ ...empty, ...d, company_id: d.company_id || "", contact_id: d.contact_id || "" }); setEditing(d.id); setModal(true); };
+  const openEdit = (d) => {
+    setForm({
+      ...empty, ...d, company_id: d.company_id || "", contact_id: d.contact_id || "",
+      contract_company_id: d.contract_company_id || "", contract_contact_id: d.contract_contact_id || "",
+      referred_by_contact_id: d.referred_by_contact_id || "",
+    });
+    setEditing(d.id); setModal(true);
+  };
   const save = async () => {
     const payload = {
       ...form, value: parseFloat(form.value) || 0,
       company_id: form.company_id || null, contact_id: form.contact_id || null,
       source: form.source || null,
+      contract_company_id: form.lead_type === "double" ? (form.contract_company_id || null) : null,
+      contract_contact_id: form.lead_type === "double" ? (form.contract_contact_id || null) : null,
+      referred_by_contact_id: form.referred_by_contact_id || null,
     };
     try {
       if (editing) await api.put(`/deals/${editing}`, payload);
@@ -216,10 +231,39 @@ export default function Deals() {
             </Select>
           </Field>
         </div>
-        <Field label={t("deal.source")}>
-          <Select data-testid="deal-source" value={form.source || ""} onChange={set("source")}>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("deal.source")}>
+            <Select data-testid="deal-source" value={form.source || ""} onChange={set("source")}>
+              <option value="">—</option>
+              {SOURCES.map((s) => <option key={s} value={s}>{t(`deal.source_${s}`)}</option>)}
+            </Select>
+          </Field>
+          <Field label={t("deal.leadType")}>
+            <Select data-testid="deal-lead-type" value={form.lead_type} onChange={set("lead_type")}>
+              {LEAD_TYPES.map((lt) => <option key={lt} value={lt}>{t(`deal.leadType_${lt}`)}</option>)}
+            </Select>
+          </Field>
+        </div>
+        {form.lead_type === "double" && (
+          <div className="grid grid-cols-2 gap-3 border border-border rounded-sm p-3" data-testid="contract-party-block">
+            <Field label={t("deal.contractCompany")}>
+              <Select data-testid="deal-contract-company" value={form.contract_company_id || ""} onChange={set("contract_company_id")}>
+                <option value="">—</option>
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+            <Field label={t("deal.contractContact")}>
+              <Select data-testid="deal-contract-contact" value={form.contract_contact_id || ""} onChange={set("contract_contact_id")}>
+                <option value="">—</option>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+              </Select>
+            </Field>
+          </div>
+        )}
+        <Field label={t("deal.referredBy")}>
+          <Select data-testid="deal-referred-by" value={form.referred_by_contact_id || ""} onChange={set("referred_by_contact_id")}>
             <option value="">—</option>
-            {SOURCES.map((s) => <option key={s} value={s}>{t(`deal.source_${s}`)}</option>)}
+            {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
           </Select>
         </Field>
         {!editing && (
