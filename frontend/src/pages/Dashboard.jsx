@@ -10,7 +10,7 @@ import api from "../api";
 import { useAuth } from "../auth";
 import AICommandBar from "../components/AICommandBar";
 import { Spinner } from "../components/common";
-import { formatMoney } from "../format";
+import { formatMoney, formatMoneyByCurrency } from "../format";
 
 const STAGE_COLORS = {
   lead: "#64748b", qualified: "#3b82f6", proposal: "#8b5cf6",
@@ -35,7 +35,9 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState([]);
-  const [chartCurrency, setChartCurrency] = useState("EUR");
+  // null = auto-pick whichever currency actually has data once stats loads;
+  // becomes a fixed choice once the user clicks the toggle.
+  const [chartCurrency, setChartCurrency] = useState(null);
 
   const load = useCallback(() => {
     api.get("/dashboard/stats").then((r) => setStats(r.data));
@@ -49,17 +51,13 @@ export default function Dashboard() {
 
   const fmt = (n) => new Intl.NumberFormat().format(n);
   const money = formatMoney;
-  // Plan 4.2: never sum HUF+EUR into one total -- render each currency that
-  // actually has a nonzero amount, instead of picking one arbitrarily.
-  const moneyByCurrency = (byCurrency) => {
-    if (byCurrency == null) return "—";
-    const parts = Object.entries(byCurrency).filter(([, v]) => v).map(([c, v]) => money(v, c));
-    return parts.length ? parts.join(" · ") : money(0, "EUR");
-  };
+  const moneyByCurrency = formatMoneyByCurrency;
 
+  const hasEur = stats.deals_by_stage.some((d) => d.value_by_currency?.EUR);
   const hasHuf = stats.deals_by_stage.some((d) => d.value_by_currency?.HUF);
+  const effectiveCurrency = chartCurrency || (hasEur ? "EUR" : hasHuf ? "HUF" : "EUR");
   const stageData = stats.deals_by_stage.map((d) => ({
-    name: t(`statuses.${d.stage}`), value: d.value_by_currency?.[chartCurrency] ?? null, stage: d.stage,
+    name: t(`statuses.${d.stage}`), value: d.value_by_currency?.[effectiveCurrency] ?? null, stage: d.stage,
   }));
   const statusData = stats.contacts_by_status.map((d) => ({
     name: t(`statuses.${d.status}`), value: d.count,
@@ -93,7 +91,7 @@ export default function Dashboard() {
               <div className="flex border border-border rounded-sm overflow-hidden text-xs">
                 {["EUR", "HUF"].map((c) => (
                   <button key={c} onClick={() => setChartCurrency(c)} data-testid={`chart-currency-${c}`}
-                    className={`px-2 py-1 transition-colors ${chartCurrency === c ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}>
+                    className={`px-2 py-1 transition-colors ${effectiveCurrency === c ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}>
                     {c}
                   </button>
                 ))}
@@ -107,7 +105,7 @@ export default function Dashboard() {
               <Tooltip
                 cursor={{ fill: "var(--surface)" }}
                 contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 3, fontSize: 12 }}
-                formatter={(v) => money(v, chartCurrency)}
+                formatter={(v) => money(v, effectiveCurrency)}
               />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {stageData.map((d, i) => (
