@@ -24,6 +24,9 @@ httpx==0.28.1
 # Rate limiting
 slowapi==0.1.9
 
+# Scheduler (Phase 5 daily housekeeping job)
+apscheduler==3.10.4
+
 # Testing
 pytest==9.1.1
 requests==2.34.2

@@ -8,6 +8,7 @@ from ai_service import get_setting, set_setting, encrypt_value, get_model
 from capabilities import (get_capability_matrix, set_capability_matrix,
                           get_default_visibility, set_default_visibility)
 from thresholds import get_thresholds, set_thresholds
+from scheduler import run_daily_housekeeping
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -55,7 +56,7 @@ def update_capabilities(payload: CapabilityMatrix, db: Session = Depends(get_db)
 
 
 @router.get("/thresholds", response_model=ThresholdSettings, summary="Get SLA thresholds",
-           description="Business-day thresholds (D7) backing the unassigned-lead / awaiting-response reminders and the future is_stale flag. Admin only.")
+           description="Business-day thresholds (D7) backing the unassigned-lead / awaiting-response reminders and the daily job's is_stale flag (Phase 5). Admin only.")
 def get_sla_thresholds(db: Session = Depends(get_db), _: User = Depends(require_role("admin"))):
     return get_thresholds(db)
 
@@ -66,3 +67,9 @@ def update_sla_thresholds(payload: ThresholdSettings, db: Session = Depends(get_
                           _: User = Depends(require_role("admin"))):
     set_thresholds(db, payload.model_dump())
     return get_thresholds(db)
+
+
+@router.post("/housekeeping/run", summary="Manually run the daily housekeeping job",
+            description="Synchronously runs the same job the scheduler fires daily (Phase 5: follow-up task creation, is_stale flag maintenance, lazy-notification sync for every active user). Uses the same advisory-lock guard as the scheduled run, so calling this while the scheduled job happens to be mid-run just reports it was skipped rather than double-running. Admin only -- mainly an ops/testing convenience, not a routine user action.")
+def run_housekeeping_now(_: User = Depends(require_role("admin"))):
+    return run_daily_housekeeping()
