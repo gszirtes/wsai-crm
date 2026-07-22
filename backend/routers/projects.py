@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
-from models import Project, TimeEntry, Activity, Company, Contact, User
+from models import Project, TimeEntry, Activity, Company, Contact, Milestone, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
                      ActivityOut, VisibilityUpdate, MemberAdd)
 from auth import get_current_user, require_write, require_capability
@@ -12,6 +12,7 @@ from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_project_out, can_view_financials
+from milestone_templates import instantiate_template
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -114,12 +115,15 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
 
 
 @router.post("", response_model=ProjectOut,
-            summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload. A service-account-authenticated create leaves the project unassigned/ownerless instead (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
+            summary="Create a project", description="owner_id is always set server-side to the creating user, never accepted from the payload. A service-account-authenticated create leaves the project unassigned/ownerless instead (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK. Pre-fills Milestone rows from `milestone_template` (default single_final), freely editable afterward.")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_capability("manage_projects"))):
-    p = Project(**payload.model_dump(), owner_id=owner_id_for(user), visibility=get_default_visibility(db))
+    data = payload.model_dump(exclude={"milestone_template"})
+    p = Project(**data, owner_id=owner_id_for(user), visibility=get_default_visibility(db))
     db.add(p)
     db.flush()
+    for m in instantiate_template(payload.milestone_template, p.id):
+        db.add(m)
     log_event(db, "project", p.id, "created", user)
     if isinstance(user, User):
         add_member(db, "project", p.id, user.id, added_by=user)
@@ -136,7 +140,7 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
     if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     old_status = p.status
-    for k, v in payload.model_dump().items():
+    for k, v in payload.model_dump(exclude={"milestone_template"}).items():
         setattr(p, k, v)
     if p.status != old_status:
         log_event(db, "project", p.id, "status_changed", user, from_value=old_status, to_value=p.status)
@@ -214,6 +218,7 @@ def delete_project(project_id: str, db: Session = Depends(get_db),
     if not p or not can_see(db, "project", p, user):
         raise HTTPException(status_code=404, detail="Project not found")
     db.query(TimeEntry).filter(TimeEntry.project_id == project_id).delete()
+    db.query(Milestone).filter(Milestone.project_id == project_id).delete()
     log_event(db, "project", p.id, "deleted", user)
     db.delete(p)
     db.commit()
