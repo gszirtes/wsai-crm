@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Users, Building2, Handshake, FolderKanban, TrendingUp, Trophy, CheckSquare,
+  Users, Building2, Handshake, FolderKanban, TrendingUp, Trophy, CheckSquare, Wallet,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, PieChart, Pie, Tooltip,
@@ -10,6 +10,7 @@ import api from "../api";
 import { useAuth } from "../auth";
 import AICommandBar from "../components/AICommandBar";
 import { Spinner } from "../components/common";
+import { formatMoney } from "../format";
 
 const STAGE_COLORS = {
   lead: "#64748b", qualified: "#3b82f6", proposal: "#8b5cf6",
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [chartCurrency, setChartCurrency] = useState("EUR");
 
   const load = useCallback(() => {
     api.get("/dashboard/stats").then((r) => setStats(r.data));
@@ -46,10 +48,18 @@ export default function Dashboard() {
   if (!stats) return <Spinner />;
 
   const fmt = (n) => new Intl.NumberFormat().format(n);
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
+  const money = formatMoney;
+  // Plan 4.2: never sum HUF+EUR into one total -- render each currency that
+  // actually has a nonzero amount, instead of picking one arbitrarily.
+  const moneyByCurrency = (byCurrency) => {
+    if (byCurrency == null) return "—";
+    const parts = Object.entries(byCurrency).filter(([, v]) => v).map(([c, v]) => money(v, c));
+    return parts.length ? parts.join(" · ") : money(0, "EUR");
+  };
 
+  const hasHuf = stats.deals_by_stage.some((d) => d.value_by_currency?.HUF);
   const stageData = stats.deals_by_stage.map((d) => ({
-    name: t(`statuses.${d.stage}`), value: d.value, stage: d.stage,
+    name: t(`statuses.${d.stage}`), value: d.value_by_currency?.[chartCurrency] ?? null, stage: d.stage,
   }));
   const statusData = stats.contacts_by_status.map((d) => ({
     name: t(`statuses.${d.status}`), value: d.count,
@@ -69,14 +79,27 @@ export default function Dashboard() {
         <Metric icon={Building2} label={t("dashboard.companies")} value={fmt(stats.total_companies)} accent="text-glow" />
         <Metric icon={Handshake} label={t("dashboard.openDeals")} value={fmt(stats.open_deals)} accent="text-amber-500" />
         <Metric icon={FolderKanban} label={t("dashboard.activeProjects")} value={fmt(stats.active_projects)} accent="text-success" />
-        <Metric icon={TrendingUp} label={t("dashboard.pipelineValue")} value={eur(stats.pipeline_value)} accent="text-primary" />
-        <Metric icon={Trophy} label={t("dashboard.wonValue")} value={eur(stats.won_value)} accent="text-success" />
+        <Metric icon={TrendingUp} label={t("dashboard.pipelineValue")} value={moneyByCurrency(stats.pipeline_value)} accent="text-primary" />
+        <Metric icon={Trophy} label={t("dashboard.wonValue")} value={moneyByCurrency(stats.won_value)} accent="text-success" />
+        <Metric icon={Wallet} label={t("dashboard.cashFlow")} value={moneyByCurrency(stats.cash_flow_by_currency)} accent="text-glow" />
         <Metric icon={CheckSquare} label={t("dashboard.openTasks")} value={fmt(stats.open_tasks)} accent="text-amber-500" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 border border-border rounded-sm p-5">
-          <h3 className="font-display font-bold mb-4">{t("dashboard.pipelineByStage")}</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display font-bold">{t("dashboard.pipelineByStage")}</h3>
+            {hasHuf && (
+              <div className="flex border border-border rounded-sm overflow-hidden text-xs">
+                {["EUR", "HUF"].map((c) => (
+                  <button key={c} onClick={() => setChartCurrency(c)} data-testid={`chart-currency-${c}`}
+                    className={`px-2 py-1 transition-colors ${chartCurrency === c ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={stageData}>
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
@@ -84,7 +107,7 @@ export default function Dashboard() {
               <Tooltip
                 cursor={{ fill: "var(--surface)" }}
                 contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 3, fontSize: 12 }}
-                formatter={(v) => eur(v)}
+                formatter={(v) => money(v, chartCurrency)}
               />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {stageData.map((d, i) => (

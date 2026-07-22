@@ -1,11 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Clock, Plus, Trash2, Activity as ActIcon, Building2, User } from "lucide-react";
+import { ArrowLeft, Clock, Plus, Pencil, Trash2, Activity as ActIcon, Building2, User, Milestone as MilestoneIcon } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
-import { Button, Input, Field, Badge, Spinner, Modal } from "../components/common";
+import { Button, Input, Field, Select, Badge, Spinner, Modal } from "../components/common";
 import VisibilityMembers from "../components/VisibilityMembers";
+import { formatMoney } from "../format";
+
+const WORK_STATUSES = ["in_progress", "client_review", "accepted"];
+const PAYMENT_STATUSES = ["not_due", "invoiceable", "invoiced", "paid"];
+const emptyMilestone = { name: "", due_date: "", mode: "percentage", amount: "", percentage: "" };
 
 function Bar({ value, max, color = "bg-primary" }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -23,17 +28,21 @@ export default function ProjectDetail() {
   const { user } = useAuth();
   const writable = can.write(user);
   const [data, setData] = useState(null);
+  const [milestones, setMilestones] = useState(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ hours: "", description: "", billable: true });
+  const [msModal, setMsModal] = useState(false);
+  const [msForm, setMsForm] = useState(emptyMilestone);
+  const [editingMs, setEditingMs] = useState(null);
 
   const load = useCallback(() => {
     api.get(`/projects/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/projects"));
+    api.get(`/projects/${id}/milestones`).then((r) => setMilestones(r.data));
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
 
   if (!data) return <Spinner />;
   const p = data.project;
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const addTime = async () => {
     await api.post(`/projects/${id}/time`, {
@@ -46,6 +55,35 @@ export default function ProjectDetail() {
   const delTime = async (eid) => {
     if (!window.confirm(t("common.confirmDelete"))) return;
     await api.delete(`/projects/${id}/time/${eid}`); load();
+  };
+
+  const openNewMs = () => { setMsForm(emptyMilestone); setEditingMs(null); setMsModal(true); };
+  const openEditMs = (m) => {
+    setMsForm({
+      name: m.name, due_date: m.due_date ? m.due_date.slice(0, 10) : "",
+      mode: m.percentage != null ? "percentage" : "amount",
+      amount: m.amount ?? "", percentage: m.percentage ?? "",
+    });
+    setEditingMs(m.id); setMsModal(true);
+  };
+  const saveMs = async () => {
+    const payload = {
+      name: msForm.name,
+      due_date: msForm.due_date || null,
+      amount: msForm.mode === "amount" ? parseFloat(msForm.amount) || 0 : null,
+      percentage: msForm.mode === "percentage" ? parseFloat(msForm.percentage) || 0 : null,
+    };
+    if (editingMs) await api.put(`/projects/${id}/milestones/${editingMs}`, payload);
+    else await api.post(`/projects/${id}/milestones`, payload);
+    setMsModal(false); load();
+  };
+  const delMs = async (mid) => {
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    await api.delete(`/projects/${id}/milestones/${mid}`); load();
+  };
+  const setMsStatus = async (mid, patch) => {
+    await api.patch(`/projects/${id}/milestones/${mid}/status`, patch);
+    load();
   };
 
   const remaining = Math.max(0, (p.estimated_hours || 0) - data.logged_hours);
@@ -74,10 +112,63 @@ export default function ProjectDetail() {
 
       {p.description && <p className="text-sm text-muted max-w-2xl">{p.description}</p>}
 
+      {/* Milestones (client-facing billing view -- shown before the internal hourly figures, per plan 4.5) */}
+      <div className="border border-border rounded-sm p-6" data-testid="milestones-panel">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display font-bold flex items-center gap-2"><MilestoneIcon size={18} className="text-primary" />{t("milestone.title")}</h3>
+          {writable && <Button onClick={openNewMs} data-testid="add-milestone-btn"><Plus size={16} />{t("milestone.add")}</Button>}
+        </div>
+        {milestones?.budget_mismatch && (
+          <p className="text-xs text-amber-600 mb-3" data-testid="milestone-mismatch-warning">{t("milestone.budgetMismatch")}</p>
+        )}
+        {milestones?.total_amount != null && (
+          <p className="text-xs text-muted mb-3">
+            {t("milestone.totalVsBudget", { total: formatMoney(milestones.total_amount, p.currency), budget: formatMoney(milestones.budget, p.currency) })}
+          </p>
+        )}
+        <div className="divide-y divide-border">
+          {!milestones || milestones.milestones.length === 0 ? (
+            <p className="text-sm text-muted py-3">{t("milestone.none")}</p>
+          ) : milestones.milestones.map((m) => (
+            <div key={m.id} data-testid={`milestone-${m.id}`} className="py-3 flex items-center gap-3 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{m.name}</div>
+                <div className="text-xs text-muted">
+                  {m.percentage != null ? `${m.percentage}%` : formatMoney(m.amount, p.currency)}
+                  {m.due_date && ` · ${new Date(m.due_date).toLocaleDateString()}`}
+                </div>
+              </div>
+              {writable ? (
+                <>
+                  <Select value={m.work_status} onChange={(e) => setMsStatus(m.id, { work_status: e.target.value })}
+                    data-testid={`ms-work-status-${m.id}`} className="w-auto text-xs">
+                    {WORK_STATUSES.map((s) => <option key={s} value={s}>{t(`milestone.workStatus_${s}`)}</option>)}
+                  </Select>
+                  <Select value={m.payment_status} onChange={(e) => setMsStatus(m.id, { payment_status: e.target.value })}
+                    data-testid={`ms-payment-status-${m.id}`} className="w-auto text-xs">
+                    {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`milestone.paymentStatus_${s}`)}</option>)}
+                  </Select>
+                  <button onClick={() => openEditMs(m)} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
+                  <button onClick={() => delMs(m.id)} className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
+                </>
+              ) : (
+                <>
+                  <Badge label={t(`milestone.workStatus_${m.work_status}`)} />
+                  <Badge label={t(`milestone.paymentStatus_${m.payment_status}`)} />
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Time & effort */}
       <div className="border border-border rounded-sm p-6">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="font-display font-bold flex items-center gap-2"><Clock size={18} className="text-primary" />{t("time.title")}</h3>
+          <div>
+            <h3 className="font-display font-bold flex items-center gap-2"><Clock size={18} className="text-primary" />{t("time.title")}</h3>
+            <p className="text-xs text-muted mt-1">{t("time.internalHint")}</p>
+          </div>
           {writable && <Button onClick={() => setModal(true)} data-testid="log-time-btn"><Plus size={16} />{t("time.addTime")}</Button>}
         </div>
 
@@ -96,7 +187,7 @@ export default function ProjectDetail() {
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.15em] text-muted">{t("time.amount")}</div>
-            <div className="font-display text-2xl font-bold mt-1">{eur(data.billable_amount)}</div>
+            <div className="font-display text-2xl font-bold mt-1">{formatMoney(data.billable_amount, p.currency)}</div>
           </div>
         </div>
         <Bar value={data.logged_hours} max={p.estimated_hours || data.logged_hours || 1} color={overBudget ? "bg-danger" : "bg-primary"} />
@@ -150,6 +241,26 @@ export default function ProjectDetail() {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.billable} onChange={(e) => setForm({ ...form, billable: e.target.checked })} /> {t("time.billable")}
         </label>
+      </Modal>
+
+      <Modal open={msModal} onClose={() => setMsModal(false)} title={editingMs ? t("milestone.edit") : t("milestone.add")}
+        footer={<>
+          <Button variant="ghost" onClick={() => setMsModal(false)}>{t("common.cancel")}</Button>
+          <Button onClick={saveMs} data-testid="save-milestone-btn">{t("common.save")}</Button>
+        </>}>
+        <Field label={t("milestone.name")}><Input data-testid="milestone-name" value={msForm.name} onChange={(e) => setMsForm({ ...msForm, name: e.target.value })} /></Field>
+        <Field label={t("milestone.dueDate")}><Input type="date" value={msForm.due_date} onChange={(e) => setMsForm({ ...msForm, due_date: e.target.value })} /></Field>
+        <div className="flex gap-2">
+          <Button type="button" variant={msForm.mode === "amount" ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setMsForm({ ...msForm, mode: "amount" })}>{t("milestone.byAmount")}</Button>
+          <Button type="button" variant={msForm.mode === "percentage" ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setMsForm({ ...msForm, mode: "percentage" })}>{t("milestone.byPercentage")}</Button>
+        </div>
+        {msForm.mode === "amount" ? (
+          <Field label={t("milestone.amount")}><Input data-testid="milestone-amount" type="number" value={msForm.amount} onChange={(e) => setMsForm({ ...msForm, amount: e.target.value })} /></Field>
+        ) : (
+          <Field label={t("milestone.percentage")}><Input data-testid="milestone-percentage" type="number" value={msForm.percentage} onChange={(e) => setMsForm({ ...msForm, percentage: e.target.value })} /></Field>
+        )}
       </Modal>
     </div>
   );
