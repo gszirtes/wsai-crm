@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Mail, Phone, Building2, Handshake, Activity as ActIcon } from "lucide-react";
-import api from "../api";
+import { ArrowLeft, Mail, Phone, Building2, Handshake, Activity as ActIcon, Users } from "lucide-react";
+import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
+
+const REFERRER_TAG = "referrer";
 
 export default function ContactDetail() {
   const { id } = useParams();
@@ -15,11 +17,31 @@ export default function ContactDetail() {
   const [data, setData] = useState(null);
   const [modal, setModal] = useState(false);
   const [email, setEmail] = useState({ direction: "outbound", subject: "", body: "" });
+  const [error, setError] = useState("");
 
   const load = useCallback(() => {
     api.get(`/contacts/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/contacts"));
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
+
+  const toggleReferrer = async () => {
+    const c = data.contact;
+    const tags = c.tags || [];
+    const nextTags = tags.includes(REFERRER_TAG)
+      ? tags.filter((tg) => tg !== REFERRER_TAG)
+      : [...tags, REFERRER_TAG];
+    try {
+      await api.put(`/contacts/${id}`, {
+        first_name: c.first_name, last_name: c.last_name, email: c.email, phone: c.phone,
+        title: c.title, status: c.status, notes: c.notes, company_id: c.company_id,
+        tags: nextTags,
+      });
+      load();
+    } catch (e) {
+      console.error("Contact update failed:", e);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
 
   const logEmail = async () => {
     await api.post("/activities", {
@@ -44,6 +66,8 @@ export default function ContactDetail() {
         <ArrowLeft size={16} /> {t("detail.back")}
       </button>
 
+      {error && <p className="text-sm text-danger">{error}</p>}
+
       <div className="flex items-start gap-4">
         <div className="w-14 h-14 rounded-sm bg-primary/15 text-primary flex items-center justify-center text-xl font-bold shrink-0">
           {c.first_name?.[0]?.toUpperCase()}
@@ -51,7 +75,10 @@ export default function ContactDetail() {
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{c.first_name} {c.last_name}</h1>
           <div className="text-sm text-muted">{c.title}{c.company_name && ` · ${c.company_name}`}</div>
-          <div className="mt-2"><Badge value={c.status} label={t(`statuses.${c.status}`)} /></div>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge value={c.status} label={t(`statuses.${c.status}`)} />
+            {(c.tags || []).includes(REFERRER_TAG) && <Badge value="won" label={t("contact.regularReferrer")} />}
+          </div>
         </div>
       </div>
 
@@ -62,21 +89,42 @@ export default function ContactDetail() {
           {c.phone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-muted" />{c.phone}</div>}
           {c.company_name && <div className="flex items-center gap-2 text-sm"><Building2 size={14} className="text-muted" />{c.company_name}</div>}
           {c.notes && <p className="text-sm text-muted pt-2 border-t border-border">{c.notes}</p>}
-        </div>
-
-        <div className="border border-border rounded-sm p-5">
-          <h3 className="font-display font-bold mb-3 flex items-center gap-2"><Handshake size={16} className="text-primary" />{t("detail.deals")}</h3>
-          {data.deals.length === 0 ? <p className="text-sm text-muted">{t("detail.noItems")}</p> : (
-            <div className="space-y-2">
-              {data.deals.map((d) => (
-                <Link to="/deals" key={d.id} className="flex items-center justify-between text-sm hover:text-primary transition-colors">
-                  <span className="truncate">{d.title}</span>
-                  <span className="flex items-center gap-2 shrink-0"><span className="font-medium">{eur(d.value)}</span><Badge value={d.stage} label={t(`statuses.${d.stage}`)} /></span>
-                </Link>
-              ))}
-            </div>
+          {writable && (
+            <label className="flex items-center gap-2 text-sm pt-2 border-t border-border">
+              <input type="checkbox" data-testid="regular-referrer-toggle"
+                checked={(c.tags || []).includes(REFERRER_TAG)} onChange={toggleReferrer} />
+              {t("contact.regularReferrer")}
+            </label>
           )}
         </div>
+
+        <div className="border border-border rounded-sm p-5" data-testid="referrals-panel">
+          <h3 className="font-display font-bold mb-3 flex items-center gap-2"><Users size={16} className="text-primary" />{t("contact.referrals")}</h3>
+          <div className="flex gap-6">
+            <div>
+              <div className="font-display text-2xl font-bold">{data.referrals.count}</div>
+              <div className="text-xs text-muted">{t("contact.referralsCount")}</div>
+            </div>
+            <div>
+              <div className="font-display text-2xl font-bold">{data.referrals.won_count}</div>
+              <div className="text-xs text-muted">{t("contact.referralsWon")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-border rounded-sm p-5">
+        <h3 className="font-display font-bold mb-3 flex items-center gap-2"><Handshake size={16} className="text-primary" />{t("detail.deals")}</h3>
+        {data.deals.length === 0 ? <p className="text-sm text-muted">{t("detail.noItems")}</p> : (
+          <div className="space-y-2">
+            {data.deals.map((d) => (
+              <Link to="/deals" key={d.id} className="flex items-center justify-between text-sm hover:text-primary transition-colors">
+                <span className="truncate">{d.title}</span>
+                <span className="flex items-center gap-2 shrink-0"><span className="font-medium">{eur(d.value)}</span><Badge value={d.stage} label={t(`statuses.${d.stage}`)} /></span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="border border-border rounded-sm p-5">
