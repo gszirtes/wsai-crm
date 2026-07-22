@@ -36,6 +36,7 @@ export default function VisibilityMembers({ entityType, entityId, visibility, ow
       });
       onVisibilityChange(r.data.visibility);
     } catch (e) {
+      console.error("VisibilityMembers request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -48,6 +49,7 @@ export default function VisibilityMembers({ entityType, entityId, visibility, ow
       setSelected("");
       load();
     } catch (e) {
+      console.error("VisibilityMembers request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -58,6 +60,7 @@ export default function VisibilityMembers({ entityType, entityId, visibility, ow
       await api.delete(`/${entityType}s/${entityId}/members/${userId}`);
       load();
     } catch (e) {
+      console.error("VisibilityMembers request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };

@@ -22,6 +22,7 @@ export default function AICommandBar({ onResult }) {
       setValue("");
       if (res.data.created && onResult) onResult(res.data);
     } catch (e) {
+      console.error("AI command failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     } finally {
       setLoading(false);

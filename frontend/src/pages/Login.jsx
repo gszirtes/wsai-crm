@@ -34,6 +34,7 @@ export default function Login() {
       else await register(name, email, password);
       navigate("/");
     } catch (err) {
+      console.error("Auth request failed:", err);
       setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally {
       setLoading(false);

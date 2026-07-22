@@ -42,6 +42,7 @@ export default function DealDetail() {
       setActivity(emptyActivity);
       load();
     } catch (e) {
+      console.error("Deal detail request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -52,6 +53,7 @@ export default function DealDetail() {
       await api.patch(`/deals/${id}/claim`);
       load();
     } catch (e) {
+      console.error("Deal detail request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -61,6 +63,7 @@ export default function DealDetail() {
       await api.patch(`/deals/${id}/ball-in-court`, { ball_in_court: value });
       load();
     } catch (e) {
+      console.error("Deal detail request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };

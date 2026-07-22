@@ -50,6 +50,7 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
+      console.error("Settings request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -69,6 +70,7 @@ export default function SettingsPage() {
       setCapsSaved(true);
       setTimeout(() => setCapsSaved(false), 2000);
     } catch (e) {
+      console.error("Settings request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };

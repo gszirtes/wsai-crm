@@ -50,6 +50,7 @@ export default function Deals() {
       else await api.post("/deals", payload);
       setModal(false); load();
     } catch (e) {
+      console.error("Deals request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
@@ -72,6 +73,7 @@ export default function Deals() {
     try {
       await api.patch(`/deals/${id}/stage`, { stage: newStage });
     } catch (e) {
+      console.error("Deals request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
     } finally {
       // Resync with the server regardless of outcome -- on failure this
