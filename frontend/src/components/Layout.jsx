@@ -78,8 +78,11 @@ export default function Layout({ children }) {
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-64 border-r border-border shrink-0 sticky top-0 h-screen">
         <div className="px-6 py-6 border-b border-border">
-          <div className="font-display text-2xl font-black tracking-tighter">
-            wespeak<span className="text-primary">.ai</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo_icon.png" alt="" className="w-7 h-7" />
+            <div className="font-display text-2xl font-black tracking-tighter">
+              wespeak<span className="text-primary">.ai</span>
+            </div>
           </div>
           <div className="text-xs uppercase tracking-[0.2em] text-muted mt-1">
             {t("app.tagline")}
@@ -140,8 +143,11 @@ export default function Layout({ children }) {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile header */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b border-border bg-bg/80 backdrop-blur-xl">
-          <div className="font-display text-xl font-black tracking-tighter">
-            wespeak<span className="text-primary">.ai</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo_icon.png" alt="" className="w-6 h-6" />
+            <div className="font-display text-xl font-black tracking-tighter">
+              wespeak<span className="text-primary">.ai</span>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <NotificationBell />

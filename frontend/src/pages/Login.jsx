@@ -54,8 +54,11 @@ export default function Login() {
         <img src={BG} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#060B19] via-[#060B19]/40 to-transparent" />
         <div className="relative z-10 flex flex-col justify-end p-12">
-          <div className="font-display text-5xl font-black tracking-tighter text-white">
-            wespeak<span className="text-glow">.ai</span>
+          <div className="flex items-center gap-3">
+            <img src="/logo_icon.png" alt="" className="w-12 h-12" />
+            <div className="font-display text-5xl font-black tracking-tighter text-white">
+              wespeak<span className="text-glow">.ai</span>
+            </div>
           </div>
           <p className="text-white/70 mt-3 max-w-sm">
             The mobile-first CRM built for AI consulting teams. Contacts, deals,
@@ -67,8 +70,11 @@ export default function Login() {
       {/* Right form */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden font-display text-3xl font-black tracking-tighter mb-8">
-            wespeak<span className="text-primary">.ai</span>
+          <div className="lg:hidden flex items-center gap-2 mb-8">
+            <img src="/logo_icon.png" alt="" className="w-8 h-8" />
+            <div className="font-display text-3xl font-black tracking-tighter">
+              wespeak<span className="text-primary">.ai</span>
+            </div>
           </div>
           <h1 className="font-display text-3xl font-bold">{t("auth.welcome")}</h1>
           <p className="text-muted text-sm mt-1">{t("auth.subtitle")}</p>
