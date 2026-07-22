@@ -45,10 +45,19 @@ def contact_detail(contact_id: str, db: Session = Depends(get_db),
     activities = db.query(Activity).filter(Activity.contact_id == contact_id) \
         .order_by(Activity.created_at.desc()).all()
     can_view = can_view_financials(db, user)
+    # 3: referral rollup, computed at request time (not stored) -- same
+    # visibility_filter as the contact's own deals list above, so a private
+    # deal this user isn't a member of doesn't inflate the count they see.
+    referred = db.query(Deal).filter(Deal.referred_by_contact_id == contact_id,
+                                     visibility_filter(db, Deal, "deal", user)).all()
     return {
         "contact": _to_out(c).model_dump(),
         "deals": [mask_deal_out(db, user, DealOut.model_validate(d), can_view).model_dump() for d in deals],
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
+        "referrals": {
+            "count": len(referred),
+            "won_count": sum(1 for d in referred if d.stage == "won"),
+        },
     }
 
 
