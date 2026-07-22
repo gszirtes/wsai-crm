@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, User
 from schemas import (DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd,
-                     ActivityOut, OwnerUpdate)
+                     ActivityOut, OwnerUpdate, BallInCourtUpdate)
 from auth import get_current_user, require_capability
 from utils import log_event, owner_id_for
 from capabilities import get_default_visibility
@@ -25,6 +25,31 @@ def _check_owner_required(d: Deal, new_stage: str):
     if new_stage in OWNER_REQUIRED_STAGES and not d.owner_id:
         raise HTTPException(status_code=400,
                             detail="This deal needs an owner (claim it first) before it can move past qualified")
+
+
+# 2.2: directed Activity creation updates ball-in-court automatically.
+# internal (or no direction) doesn't move the needle either way.
+DIRECTION_TO_BALL_IN_COURT = {"inbound": "us", "outbound": "them"}
+
+
+def apply_ball_in_court_for_activity(db: Session, deal_id: str, direction: str, actor):
+    """Called from activities.py on a directed Activity create. Not a
+    visibility/existence check (activities.py already resolved+can_see'd
+    the deal before calling this) -- just applies the state change."""
+    new_value = DIRECTION_TO_BALL_IN_COURT.get(direction)
+    if not new_value:
+        return
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d:
+        return
+    old_value = d.ball_in_court
+    d.last_contact_at = datetime.now(timezone.utc)
+    d.ball_in_court = new_value
+    if new_value != old_value:
+        # D4: a "pass" is counted from these direction changes in the
+        # Fazis 2.3 deal-flow analytics.
+        log_event(db, "deal", d.id, "ball_in_court_changed", actor,
+                 from_value=old_value, to_value=new_value)
 
 
 def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
@@ -53,12 +78,14 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Deal not found")
     company = db.query(Company).filter(Company.id == d.company_id).first() if d.company_id else None
     contact = db.query(Contact).filter(Contact.id == d.contact_id).first() if d.contact_id else None
+    owner = db.query(User).filter(User.id == d.owner_id).first() if d.owner_id else None
     activities = db.query(Activity).filter(Activity.deal_id == deal_id) \
         .order_by(Activity.created_at.desc()).all()
     return {
         "deal": _to_out(db, d, user).model_dump(),
         "company_name": company.name if company else None,
         "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip() if contact else None,
+        "owner_name": owner.name if owner else None,
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
     }
 
@@ -180,6 +207,23 @@ def reassign_deal_owner(deal_id: str, payload: OwnerUpdate, db: Session = Depend
         d.claimed_at = datetime.now(timezone.utc)
     log_event(db, "deal", d.id, "owner_changed", user, from_value=old_owner, to_value=target.id)
     add_member(db, "deal", d.id, target.id, added_by=user)
+    db.commit()
+    db.refresh(d)
+    return _to_out(db, d, user)
+
+
+@router.patch("/{deal_id}/ball-in-court", response_model=DealOut,
+             summary="Manually set ball-in-court", description="Override who the ball is with (us/them/none) -- the value is otherwise set automatically whenever a directed Activity is logged against the deal. Requires manage_deals. Logs a ball_in_court_changed event.")
+def update_ball_in_court(deal_id: str, payload: BallInCourtUpdate, db: Session = Depends(get_db),
+                        user: User = Depends(require_capability("manage_deals"))):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
+        raise HTTPException(status_code=404, detail="Deal not found")
+    old_value = d.ball_in_court
+    d.ball_in_court = payload.ball_in_court
+    if d.ball_in_court != old_value:
+        log_event(db, "deal", d.id, "ball_in_court_changed", user,
+                 from_value=old_value, to_value=d.ball_in_court)
     db.commit()
     db.refresh(d)
     return _to_out(db, d, user)
