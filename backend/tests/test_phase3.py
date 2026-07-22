@@ -69,6 +69,70 @@ class TestLeadType:
             admin_client.delete(f"{base_url}/api/deals/{d['id']}")
             admin_client.delete(f"{base_url}/api/companies/{company['id']}")
 
+    def test_contract_fields_settable_while_lead_type_single(self, admin_client, base_url):
+        """3: contract_* is deliberately unvalidated against lead_type
+        (schemas.py comment) -- this documents that non-coupling as a
+        contract, not just a comment."""
+        company = admin_client.post(f"{base_url}/api/companies", json={"name": "TEST_p3 single+contract co"}).json()
+        try:
+            r = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 single with contract", "lead_type": "single",
+                "contract_company_id": company["id"],
+            })
+            assert r.status_code == 200, r.text
+            d = r.json()
+            try:
+                assert d["lead_type"] == "single"
+                assert d["contract_company_id"] == company["id"]
+            finally:
+                admin_client.delete(f"{base_url}/api/deals/{d['id']}")
+        finally:
+            admin_client.delete(f"{base_url}/api/companies/{company['id']}")
+
+    def test_delete_referenced_company_nulls_contract_company_id(self, admin_client, base_url):
+        company = admin_client.post(f"{base_url}/api/companies", json={"name": "TEST_p3 del contract co"}).json()
+        d = admin_client.post(f"{base_url}/api/deals", json={
+            "title": "TEST_p3 del contract co deal", "lead_type": "double",
+            "contract_company_id": company["id"],
+        }).json()
+        try:
+            r = admin_client.delete(f"{base_url}/api/companies/{company['id']}")
+            assert r.status_code == 200, r.text
+            refreshed = admin_client.get(f"{base_url}/api/deals").json()
+            match = next(x for x in refreshed if x["id"] == d["id"])
+            assert match["contract_company_id"] is None
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{d['id']}")
+
+    def test_delete_referenced_contact_nulls_contract_contact_id(self, admin_client, base_url):
+        contact = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p3 del contract contact"}).json()
+        d = admin_client.post(f"{base_url}/api/deals", json={
+            "title": "TEST_p3 del contract contact deal", "lead_type": "double",
+            "contract_contact_id": contact["id"],
+        }).json()
+        try:
+            r = admin_client.delete(f"{base_url}/api/contacts/{contact['id']}")
+            assert r.status_code == 200, r.text
+            refreshed = admin_client.get(f"{base_url}/api/deals").json()
+            match = next(x for x in refreshed if x["id"] == d["id"])
+            assert match["contract_contact_id"] is None
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{d['id']}")
+
+    def test_delete_referenced_contact_nulls_referred_by_contact_id(self, admin_client, base_url):
+        contact = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p3 del referrer contact"}).json()
+        d = admin_client.post(f"{base_url}/api/deals", json={
+            "title": "TEST_p3 del referrer deal", "referred_by_contact_id": contact["id"],
+        }).json()
+        try:
+            r = admin_client.delete(f"{base_url}/api/contacts/{contact['id']}")
+            assert r.status_code == 200, r.text
+            refreshed = admin_client.get(f"{base_url}/api/deals").json()
+            match = next(x for x in refreshed if x["id"] == d["id"])
+            assert match["referred_by_contact_id"] is None
+        finally:
+            admin_client.delete(f"{base_url}/api/deals/{d['id']}")
+
 
 class TestReferral:
     """3: Deal.referred_by_contact_id + request-time referral rollup on
@@ -109,6 +173,55 @@ class TestReferral:
             for did in deal_ids:
                 admin_client.delete(f"{base_url}/api/deals/{did}")
             admin_client.delete(f"{base_url}/api/contacts/{referrer['id']}")
+
+    def test_referral_rollup_counts_lost_deal_but_not_as_won(self, admin_client, base_url):
+        referrer = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p3 lost rollup referrer"}).json()
+        deal_ids = []
+        try:
+            d1 = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 lost rollup deal 1", "referred_by_contact_id": referrer["id"],
+            }).json()
+            deal_ids.append(d1["id"])
+            d2 = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 lost rollup deal 2 won", "referred_by_contact_id": referrer["id"],
+            }).json()
+            deal_ids.append(d2["id"])
+            d3 = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 lost rollup deal 3 lost", "referred_by_contact_id": referrer["id"],
+            }).json()
+            deal_ids.append(d3["id"])
+            admin_client.patch(f"{base_url}/api/deals/{d2['id']}/stage", json={"stage": "won"})
+            admin_client.patch(f"{base_url}/api/deals/{d3['id']}/stage", json={"stage": "lost"})
+
+            detail = admin_client.get(f"{base_url}/api/contacts/{referrer['id']}/detail").json()
+            assert detail["referrals"]["count"] == 3
+            assert detail["referrals"]["won_count"] == 1
+        finally:
+            for did in deal_ids:
+                admin_client.delete(f"{base_url}/api/deals/{did}")
+            admin_client.delete(f"{base_url}/api/contacts/{referrer['id']}")
+
+    def test_contact_as_both_direct_party_and_referrer_lists_dont_cross_contaminate(self, admin_client, base_url):
+        contact = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p3 dual role contact"}).json()
+        deal_ids = []
+        try:
+            direct = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 dual role direct deal", "contact_id": contact["id"],
+            }).json()
+            deal_ids.append(direct["id"])
+            referred = admin_client.post(f"{base_url}/api/deals", json={
+                "title": "TEST_p3 dual role referred deal", "referred_by_contact_id": contact["id"],
+            }).json()
+            deal_ids.append(referred["id"])
+
+            detail = admin_client.get(f"{base_url}/api/contacts/{contact['id']}/detail").json()
+            deal_titles = {d["title"] for d in detail["deals"]}
+            assert deal_titles == {"TEST_p3 dual role direct deal"}
+            assert detail["referrals"]["count"] == 1
+        finally:
+            for did in deal_ids:
+                admin_client.delete(f"{base_url}/api/deals/{did}")
+            admin_client.delete(f"{base_url}/api/contacts/{contact['id']}")
 
     def test_referral_rollup_zero_for_contact_with_no_referrals(self, admin_client, base_url):
         c = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p3 no referrals"}).json()
