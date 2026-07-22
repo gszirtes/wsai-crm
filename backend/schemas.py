@@ -146,6 +146,7 @@ class DealOut(DealBase):
     claimed_at: Optional[datetime] = None
     last_contact_at: Optional[datetime] = None
     ball_in_court: Optional[BallInCourt] = None
+    is_stale: Optional[bool] = False
     created_at: Optional[datetime] = None
 
     class Config:
@@ -194,6 +195,12 @@ class ProjectBase(BaseModel):
     end_date: Optional[datetime] = None
     company_id: Optional[str] = None
     contact_id: Optional[str] = None
+    # Plan 5.2: business-days-equivalent delay after closed_at before the
+    # daily job creates a follow-up check-in task. Client-settable per
+    # project (unlike closed_at/satisfaction_score below, which are system-
+    # set: closed_at from a status transition, satisfaction_score from
+    # completing the follow-up task).
+    follow_up_days: Optional[int] = Field(60, ge=0)
 
 
 class ProjectCreate(ProjectBase):
@@ -213,9 +220,16 @@ class ProjectOut(ProjectBase):
     created_at: Optional[datetime] = None
     logged_hours: Optional[float] = 0
     health: Optional[str] = None
+    closed_at: Optional[datetime] = None
+    satisfaction_score: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class FollowUpComplete(BaseModel):
+    satisfaction_score: Optional[int] = Field(None, ge=1, le=5)
+    referred_contact_id: Optional[str] = None
 
 
 class MilestoneBase(BaseModel):

@@ -18,10 +18,22 @@ from rate_limit import limiter
 from routers import (auth_router, users, companies, contacts, deals, projects,
                      activities, dashboard, ai_router, settings_router, data_io,
                      reports, notifications, event_logs, service_accounts, milestones)
+from scheduler import start_scheduler
 
 app = FastAPI(title="wespeak.ai CRM")
 
 app.state.limiter = limiter
+
+
+@app.on_event("startup")
+def _start_background_scheduler():
+    # Unlike seed() (a one-time bootstrap step run before uvicorn starts,
+    # explicitly NOT a startup hook -- see entrypoint.sh), the scheduler is
+    # meant to run continuously in every worker process; --workers 2 means
+    # this fires once per worker, and run_daily_housekeeping()'s own
+    # advisory lock (scheduler.py) is what prevents duplicate execution, not
+    # this hook.
+    start_scheduler()
 
 
 # Every error response (HTTPException, Pydantic validation, rate limiting)

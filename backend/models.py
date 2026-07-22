@@ -92,6 +92,7 @@ class Deal(Base):
     contract_company_id = Column(String, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     contract_contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     referred_by_contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    is_stale = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -114,6 +115,9 @@ class Project(Base):
     contact_id = Column(String, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     deal_id = Column(String, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    follow_up_days = Column(Integer, nullable=False, default=60, server_default="60")
+    satisfaction_score = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
