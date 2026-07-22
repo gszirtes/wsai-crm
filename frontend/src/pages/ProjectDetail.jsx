@@ -164,29 +164,35 @@ export default function ProjectDetail() {
         <div className="border border-amber-500/40 rounded-sm p-6" data-testid="follow-up-card">
           <h3 className="font-display font-bold flex items-center gap-2 mb-1"><MessageCircle size={18} className="text-amber-500" />{t("followup.title")}</h3>
           <p className="text-sm text-muted mb-4">{t("followup.hint")}</p>
-          {fuError && <p className="text-sm text-danger mb-3">{fuError}</p>}
-          <Field label={t("followup.satisfaction")}>
-            <Select data-testid="followup-satisfaction" value={fuForm.satisfaction_score}
-              onChange={(e) => setFuForm({ ...fuForm, satisfaction_score: e.target.value })}>
-              <option value="">—</option>
-              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-            </Select>
-          </Field>
-          <label className="flex items-center gap-2 text-sm mt-3">
-            <input type="checkbox" data-testid="followup-has-referral" checked={fuForm.hasReferral}
-              onChange={(e) => setFuForm({ ...fuForm, hasReferral: e.target.checked })} />
-            {t("followup.hasReferral")}
-          </label>
-          {fuForm.hasReferral && (
-            <Field label={t("followup.referredContact")}>
-              <Select data-testid="followup-referred-contact" value={fuForm.referred_contact_id}
-                onChange={(e) => setFuForm({ ...fuForm, referred_contact_id: e.target.value })}>
-                <option value="">—</option>
-                {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
-              </Select>
-            </Field>
+          {writable ? (
+            <>
+              {fuError && <p className="text-sm text-danger mb-3">{fuError}</p>}
+              <Field label={t("followup.satisfaction")}>
+                <Select data-testid="followup-satisfaction" value={fuForm.satisfaction_score}
+                  onChange={(e) => setFuForm({ ...fuForm, satisfaction_score: e.target.value })}>
+                  <option value="">—</option>
+                  {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                </Select>
+              </Field>
+              <label className="flex items-center gap-2 text-sm mt-3">
+                <input type="checkbox" data-testid="followup-has-referral" checked={fuForm.hasReferral}
+                  onChange={(e) => setFuForm({ ...fuForm, hasReferral: e.target.checked })} />
+                {t("followup.hasReferral")}
+              </label>
+              {fuForm.hasReferral && (
+                <Field label={t("followup.referredContact")}>
+                  <Select data-testid="followup-referred-contact" value={fuForm.referred_contact_id}
+                    onChange={(e) => setFuForm({ ...fuForm, referred_contact_id: e.target.value })}>
+                    <option value="">—</option>
+                    {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+                  </Select>
+                </Field>
+              )}
+              <Button onClick={completeFollowUp} data-testid="complete-followup-btn" className="mt-4">{t("followup.complete")}</Button>
+            </>
+          ) : (
+            <p className="text-sm text-muted">{t("followup.readOnlyHint")}</p>
           )}
-          <Button onClick={completeFollowUp} data-testid="complete-followup-btn" className="mt-4">{t("followup.complete")}</Button>
         </div>
       )}
 

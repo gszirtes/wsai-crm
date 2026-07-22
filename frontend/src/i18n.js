@@ -160,6 +160,7 @@ const en = {
       hasReferral: "They mentioned a referral",
       referredContact: "Referred contact",
       complete: "Complete follow-up",
+      readOnlyHint: "Waiting for someone with write access to complete this.",
     },
     milestone: {
       title: "Milestones",
@@ -488,6 +489,7 @@ const hu = {
       hasReferral: "Említettek beajánlást",
       referredContact: "Beajánlott kapcsolat",
       complete: "Utókövetés lezárása",
+      readOnlyHint: "Írási joggal rendelkező felhasználóra vár, aki lezárhatja.",
     },
     milestone: {
       title: "Mérföldkövek",

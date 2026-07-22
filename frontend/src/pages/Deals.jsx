@@ -181,7 +181,7 @@ export default function Deals() {
                                   <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
                                     label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
                                 )}
-                                {d.is_stale && <Badge value="lost" label={t("deal.stale")} />}
+                                {d.is_stale && <Badge value="at_risk" label={t("deal.stale")} />}
                               </div>
                             </div>
                           )}
@@ -208,7 +208,7 @@ export default function Deals() {
                 <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
                   label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
               )}
-              {d.is_stale && <Badge value="lost" label={t("deal.stale")} />}
+              {d.is_stale && <Badge value="at_risk" label={t("deal.stale")} />}
               <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
               {writable && (
                 <div className="flex gap-1 shrink-0">
