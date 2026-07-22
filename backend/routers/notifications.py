@@ -70,6 +70,20 @@ def _build_desired(db: Session, user: User) -> dict:
                     "body": d.title,
                     "link": f"/deals/{d.id}",
                 }
+
+    # 2.2/D7: the ball has been in our court too long -- surfaced to the
+    # deal's own owner, same lazy owner_id==user.id pattern as tasks/projects.
+    awaiting_days = get_thresholds(db)["awaiting_response_days"]
+    awaiting = db.query(Deal).filter(Deal.owner_id == user.id, Deal.ball_in_court == "us",
+                                     Deal.last_contact_at != None).all()
+    for d in awaiting:
+        if business_days_since(d.last_contact_at, now) >= awaiting_days:
+            desired[f"awaiting_response:{d.id}"] = {
+                "type": "auto_awaiting_response",
+                "title": "Awaiting your response",
+                "body": d.title,
+                "link": f"/deals/{d.id}",
+            }
     return desired
 
 
