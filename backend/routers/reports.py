@@ -8,6 +8,14 @@ from financials import can_view_financials
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
+# Deal has no closed_at (that's Project's, a later phase) -- a deal
+# currently sitting in a terminal stage has no further transition to bound
+# an "open" duration, so counting (now - last_transition) would just be
+# "time since closing", growing forever, not a meaningful time-in-stage
+# figure. Only a *bounded* visit to won/lost (an actual stage_changed event
+# moving away from it, e.g. a won deal later reopened) is counted.
+TERMINAL_STAGES = {"won", "lost"}
+
 
 def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
@@ -101,7 +109,8 @@ def deal_flow(db: Session = Depends(get_db), user: User = Depends(require_capabi
             stage_durations_days.setdefault(cursor_stage, []).append((sc_time - cursor_time).total_seconds() / 86400)
             cursor_time = sc_time
             cursor_stage = sc.to_value
-        stage_durations_days.setdefault(cursor_stage, []).append((now - cursor_time).total_seconds() / 86400)
+        if cursor_stage not in TERMINAL_STAGES:
+            stage_durations_days.setdefault(cursor_stage, []).append((now - cursor_time).total_seconds() / 86400)
 
     avg_days_per_stage = {
         stage: round(sum(durs) / len(durs), 2)
