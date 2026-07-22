@@ -7,6 +7,7 @@ from auth import get_current_user
 from utils import logged_hours_for
 from capabilities import has_capability
 from thresholds import get_thresholds, business_days_since
+from visibility import visibility_filter
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -58,10 +59,15 @@ def _build_desired(db: Session, user: User) -> dict:
     # D1/JV-10: an unowned lead isn't anyone's (owner_id IS NULL, so the
     # owner_id==user.id lazy pattern above would never surface it to anyone)
     # -- surfaced instead to whoever has view_all_reports (managers/admin),
-    # not tied to a specific assignee.
+    # not tied to a specific assignee. view_all_reports is admin-configurable
+    # and could in principle be granted to a non-admin/manager role, so this
+    # still applies the same visibility_filter list_deals(unassigned=true)
+    # uses -- a private unassigned deal must not leak its title/existence to
+    # a view_all_reports-holder who isn't a member of it.
     if has_capability(db, user.role, "view_all_reports"):
         threshold_days = get_thresholds(db)["unassigned_days"]
-        unclaimed = db.query(Deal).filter(Deal.owner_id.is_(None)).all()
+        unclaimed = db.query(Deal).filter(Deal.owner_id.is_(None),
+                                          visibility_filter(db, Deal, "deal", user)).all()
         for d in unclaimed:
             if business_days_since(d.created_at, now) >= threshold_days:
                 desired[f"unclaimed_lead:{d.id}"] = {
