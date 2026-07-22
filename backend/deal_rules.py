@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from models import Deal, Project
 from utils import log_event
 from membership import add_member, list_members
-from milestone_templates import instantiate_template, DEFAULT_TEMPLATE
+from milestone_templates import DEFAULT_TEMPLATE, seed_project_milestones
 
 # D1/BL-4: an unowned lead may sit in the shared inbox but can't advance past
 # "qualified" -- these are the stages that require owner_id to already be set.
@@ -70,9 +70,7 @@ def create_project_from_won_deal(db: Session, deal: Deal, actor):
     )
     db.add(p)
     db.flush()
-    for m in instantiate_template(DEFAULT_TEMPLATE, p.id):
-        db.add(m)
-    log_event(db, "project", p.id, "created", actor, note=f"auto-created from deal {deal.id}")
+    seed_project_milestones(db, p, DEFAULT_TEMPLATE, actor, note=f"auto-created from deal {deal.id}")
     # Carry the deal's membership over so the same people already granted
     # access to a private deal aren't suddenly locked out of the project it
     # spawns (matters only when visibility="private" -- add_member is a

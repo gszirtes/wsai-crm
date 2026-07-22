@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import TimeEntry, Project, Deal, EventLog, User
 from auth import require_capability, get_current_user
-from financials import can_view_financials, zero_by_currency
+from financials import can_view_financials, zero_by_currency, add_currency
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -46,15 +46,15 @@ def utilization(period: str = "week", db: Session = Depends(get_db),
         if e.billable:
             a["billable"] += e.hours or 0
             p = projects.get(e.project_id)
-            if p and p.currency in a["amount_by_currency"]:
-                a["amount_by_currency"][p.currency] += (e.hours or 0) * (p.hourly_rate or 0)
+            if p:
+                add_currency(a["amount_by_currency"], p.currency, (e.hours or 0) * (p.hourly_rate or 0))
 
     rows = []
     totals_amount = zero_by_currency()
     for u in db.query(User).filter(User.active == True, User.role != "guest").all():
         a = agg.get(u.id, {"total": 0.0, "billable": 0.0, "amount_by_currency": zero_by_currency()})
         for cur, amt in a["amount_by_currency"].items():
-            totals_amount[cur] += amt
+            add_currency(totals_amount, cur, amt)
         rows.append({
             "user_id": u.id, "name": u.name, "role": u.role,
             "total_hours": round(a["total"], 2),

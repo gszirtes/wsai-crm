@@ -12,7 +12,7 @@ from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_project_out, can_view_financials
-from milestone_templates import instantiate_template
+from milestone_templates import seed_project_milestones
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -122,9 +122,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
     p = Project(**data, owner_id=owner_id_for(user), visibility=get_default_visibility(db))
     db.add(p)
     db.flush()
-    for m in instantiate_template(payload.milestone_template, p.id):
-        db.add(m)
-    log_event(db, "project", p.id, "created", user)
+    seed_project_milestones(db, p, payload.milestone_template, user)
     if isinstance(user, User):
         add_member(db, "project", p.id, user.id, added_by=user)
     db.commit()

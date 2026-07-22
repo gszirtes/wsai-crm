@@ -5,7 +5,7 @@ from database import get_db
 from models import Contact, Company, Deal, Project, Milestone, Activity, User
 from auth import get_current_user
 from visibility import visibility_filter
-from financials import can_view_financials, zero_by_currency
+from financials import can_view_financials, zero_by_currency, add_currency
 from utils import resolved_milestone_amount
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -43,8 +43,7 @@ def stats(db: Session = Depends(get_db), user: User = Depends(get_current_user))
     for stage, currency, count, value in stage_rows:
         row = by_stage.setdefault(stage, {"stage": stage, "count": 0, "value_by_currency": zero_by_currency()})
         row["count"] += count
-        if currency in row["value_by_currency"]:
-            row["value_by_currency"][currency] = float(value)
+        add_currency(row["value_by_currency"], currency, float(value))
     deals_by_stage = list(by_stage.values())
     if not can_see_money:
         for row in deals_by_stage:
@@ -71,8 +70,7 @@ def stats(db: Session = Depends(get_db), user: User = Depends(get_current_user))
         rows = db.query(Milestone, Project).join(Project, Milestone.project_id == Project.id) \
             .filter(Milestone.payment_status == "invoiced", project_vis).all()
         for m, p in rows:
-            if p.currency in cash_flow:
-                cash_flow[p.currency] += resolved_milestone_amount(m, p)
+            add_currency(cash_flow, p.currency, resolved_milestone_amount(m, p))
 
     return {
         "total_contacts": total_contacts,

@@ -16,6 +16,15 @@ def zero_by_currency() -> dict:
     return {c: 0.0 for c in CURRENCIES}
 
 
+def add_currency(bucket: dict, currency: str, amount: float):
+    """Add `amount` into `bucket[currency]` if `currency` is one we track,
+    silently dropping anything else -- shared by every per-currency
+    aggregation loop (dashboard.py, reports.py) instead of each hand-rolling
+    the same `if currency in bucket: bucket[currency] += amount` check."""
+    if currency in bucket:
+        bucket[currency] += amount
+
+
 def can_view_financials(db, user) -> bool:
     return has_capability(db, user.role, "view_financials")
 
