@@ -3,16 +3,36 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
-from models import Project, TimeEntry, Activity, Company, Contact, Milestone, User
+from models import Project, TimeEntry, Activity, Company, Contact, Deal, Milestone, EventLog, User
 from schemas import (ProjectCreate, ProjectOut, TimeEntryCreate, TimeEntryOut,
-                     ActivityOut, VisibilityUpdate, MemberAdd)
+                     ActivityOut, VisibilityUpdate, MemberAdd, FollowUpComplete)
 from auth import get_current_user, require_write, require_capability
 from utils import logged_hours_for, log_event, owner_id_for
-from capabilities import get_default_visibility
+from capabilities import get_default_visibility, has_capability
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_project_out, can_view_financials
 from milestone_templates import seed_project_milestones
+
+# Frontend's ContactDetail.jsx/Contacts.jsx REFERRER_TAG constant -- kept in
+# sync manually since Contact.tags is a free-form string list, not an enum.
+REFERRER_TAG = "referrer"
+
+
+def _pending_follow_up(db: Session, project_id: str):
+    """The most recent follow_up_task_created EventLog for this project,
+    only if its linked Activity still exists and isn't completed yet --
+    shared by project_detail (surfacing it to the frontend) and
+    complete_follow_up (finding what to mark done)."""
+    ev = db.query(EventLog).filter(EventLog.entity_type == "project", EventLog.entity_id == project_id,
+                                   EventLog.event_type == "follow_up_task_created") \
+        .order_by(EventLog.created_at.desc()).first()
+    if not ev or not ev.activity_id:
+        return None
+    a = db.query(Activity).filter(Activity.id == ev.activity_id).first()
+    if not a or a.completed:
+        return None
+    return a
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -101,6 +121,7 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
     company = db.query(Company).filter(Company.id == p.company_id).first() if p.company_id else None
     contact = db.query(Contact).filter(Contact.id == p.contact_id).first() if p.contact_id else None
     can_see_money = can_view_financials(db, user)
+    pending_follow_up = _pending_follow_up(db, project_id)
     return {
         "project": to_out(db, p, user),
         "logged_hours": logged,
@@ -111,6 +132,7 @@ def project_detail(project_id: str, db: Session = Depends(get_db),
         "contact_name": f"{contact.first_name} {contact.last_name or ''}".strip() if contact else None,
         "time_entries": [e.model_dump() for e in entry_out],
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
+        "pending_follow_up": ActivityOut.model_validate(pending_follow_up).model_dump() if pending_follow_up else None,
     }
 
 
@@ -130,6 +152,47 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db),
     return to_out(db, p, user)
 
 
+@router.post("/{project_id}/follow-up",
+            summary="Complete the pending follow-up check-in", description="Plan 5.2: marks the daily job's follow-up Activity completed, optionally records Project.satisfaction_score (1-5), and optionally runs the referral loop -- creates a new unassigned single-lead-type Deal with referred_by_contact_id set and tags the referenced Contact 'referrer'. 400 if there's no pending follow-up task for this project. Requires manage_deals in addition to require_write when referred_contact_id is set, since that branch creates a Deal (same authz-precedence rule as every other alternate deal-creation surface).")
+def complete_follow_up(project_id: str, payload: FollowUpComplete, db: Session = Depends(get_db),
+                       user: User = Depends(require_write)):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p or not can_see(db, "project", p, user):
+        raise HTTPException(status_code=404, detail="Project not found")
+    activity = _pending_follow_up(db, project_id)
+    if not activity:
+        raise HTTPException(status_code=400, detail="No pending follow-up task for this project")
+
+    activity.completed = True
+    log_event(db, "activity", activity.id, "status_changed", user, from_value="False", to_value="True")
+
+    if payload.satisfaction_score is not None:
+        p.satisfaction_score = payload.satisfaction_score
+        log_event(db, "project", p.id, "satisfaction_recorded", user, to_value=str(payload.satisfaction_score))
+
+    referral_deal_id = None
+    if payload.referred_contact_id:
+        if not has_capability(db, user.role, "manage_deals"):
+            raise HTTPException(status_code=403, detail="manage_deals required to log a referral")
+        contact = db.query(Contact).filter(Contact.id == payload.referred_contact_id).first()
+        if not contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        referral_name = f"{contact.first_name} {contact.last_name or ''}".strip()
+        d = Deal(title=f"Referral from {referral_name}", owner_id=None,
+                visibility=get_default_visibility(db), lead_type="single",
+                referred_by_contact_id=contact.id)
+        db.add(d)
+        db.flush()
+        log_event(db, "deal", d.id, "created", user, note=f"referral loop from project {p.id}")
+        if REFERRER_TAG not in (contact.tags or []):
+            contact.tags = [*(contact.tags or []), REFERRER_TAG]
+        referral_deal_id = d.id
+
+    db.commit()
+    db.refresh(p)
+    return {"project": to_out(db, p, user).model_dump(), "referral_deal_id": referral_deal_id}
+
+
 @router.put("/{project_id}", response_model=ProjectOut,
            summary="Update a project", description="Full replace of the editable fields. Logs a status_changed event if status differs from before; no other transition guard.")
 def update_project(project_id: str, payload: ProjectCreate, db: Session = Depends(get_db),
@@ -142,6 +205,13 @@ def update_project(project_id: str, payload: ProjectCreate, db: Session = Depend
         setattr(p, k, v)
     if p.status != old_status:
         log_event(db, "project", p.id, "status_changed", user, from_value=old_status, to_value=p.status)
+        # 5.2: closed_at drives the follow-up job (closed_at + follow_up_days
+        # <= now). Reversible like the milestone statuses -- a project
+        # reopened from completed clears it rather than leaving a stale date.
+        if p.status == "completed":
+            p.closed_at = datetime.now(timezone.utc)
+        elif old_status == "completed":
+            p.closed_at = None
     db.commit()
     db.refresh(p)
     return to_out(db, p, user)
