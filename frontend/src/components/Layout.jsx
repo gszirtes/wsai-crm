@@ -65,6 +65,7 @@ export default function Layout({ children }) {
   const nav = [...NAV];
   if (user && (user.role === "admin" || user.role === "manager")) {
     nav.push({ to: "/utilization", key: "utilization", icon: BarChart3 });
+    nav.push({ to: "/deal-flow", key: "dealFlow", icon: Handshake });
   }
   if (can.admin(user)) {
     nav.push({ to: "/users", key: "users", icon: Shield });

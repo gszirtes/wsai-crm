@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Building2, User, Activity as ActIcon, Plus } from "lucide-react";
+import { ArrowLeft, Building2, User, Activity as ActIcon, Plus, History } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
@@ -18,12 +18,14 @@ export default function DealDetail() {
   const { user } = useAuth();
   const writable = can.write(user);
   const [data, setData] = useState(null);
+  const [timeline, setTimeline] = useState(null);
   const [modal, setModal] = useState(false);
   const [activity, setActivity] = useState(emptyActivity);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
     api.get(`/deals/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/deals"));
+    api.get(`/deals/${id}/timeline`).then((r) => setTimeline(r.data)).catch(() => {});
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
 
@@ -66,6 +68,22 @@ export default function DealDetail() {
   if (!data) return <Spinner />;
   const d = data.deal;
   const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
+
+  const passCount = (timeline || []).filter((e) => e.event_type === "ball_in_court_changed").length;
+  const throughputDays = timeline && timeline.length
+    ? Math.max(0, Math.round((Date.now() - new Date(timeline[0].created_at).getTime()) / 86400000))
+    : null;
+
+  const timelineLabel = (e) => {
+    const base = t(`timeline.${e.event_type}`, e.event_type);
+    if (e.event_type === "stage_changed") return `${base}: ${t(`statuses.${e.from_value}`)} → ${t(`statuses.${e.to_value}`)}`;
+    if (e.event_type === "ball_in_court_changed") {
+      return `${base}: ${t(`deal.ballInCourt_${e.from_value || "none"}`)} → ${t(`deal.ballInCourt_${e.to_value}`)}`;
+    }
+    if (e.event_type === "visibility_changed") return `${base}: ${e.from_value} → ${e.to_value}`;
+    if (e.event_type === "activity_logged" && e.activity_subject) return `${base}: ${e.activity_subject}`;
+    return base;
+  };
 
   return (
     <div className="space-y-6">
@@ -133,6 +151,31 @@ export default function DealDetail() {
                 <div>
                   <div className="text-sm">{a.subject}</div>
                   <div className="text-xs text-muted">{t(`statuses.${a.type}`)}{a.direction ? ` · ${t(`activity.direction.${a.direction}`)}` : ""}{a.completed ? " · ✓" : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border border-border rounded-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-display font-bold flex items-center gap-2"><History size={16} className="text-glow" />{t("timeline.title")}</h3>
+          {timeline && timeline.length > 0 && (
+            <div className="flex items-center gap-3 text-xs text-muted">
+              <span>{throughputDays}d</span>
+              <span>{passCount} {t("deal.ballInCourt").toLowerCase()}</span>
+            </div>
+          )}
+        </div>
+        {!timeline || timeline.length === 0 ? <p className="text-sm text-muted">{t("timeline.noEvents")}</p> : (
+          <div className="space-y-3" data-testid="deal-timeline">
+            {timeline.map((e) => (
+              <div key={e.id} className="flex items-start gap-3" data-testid={`timeline-event-${e.event_type}`}>
+                <span className="mt-1.5 w-2 h-2 rounded-full bg-glow shrink-0" />
+                <div>
+                  <div className="text-sm">{timelineLabel(e)}</div>
+                  <div className="text-xs text-muted">{new Date(e.created_at).toLocaleString()}</div>
                 </div>
               </div>
             ))}
