@@ -111,6 +111,13 @@ Visibility filtering and financial masking (see below) are applied everywhere De
 - One commit per logical feature within a phase, not one giant phase-commit.
 - **Stop after every phase and Step 0**, report what changed and the test results, and wait for explicit approval before starting the next phase — don't jump ahead.
 - If the plan is ambiguous or self-contradictory for the code as it stands, stop and ask rather than guessing.
+- **End-of-phase audit, before the phase counts as done.** Green tests are necessary but not sufficient. Before reporting a phase complete (and again before merging it to `main`), audit it across five dimensions and fix everything the audit finds:
+  1. **Completeness** — every requirement in that phase's `INTEGRATION_PLAN.md` section is actually implemented, backend *and* frontend (a backend-only feature with no UI to use it is a gap, not a deferred nice-to-have, unless the plan explicitly says so).
+  2. **Architecture** — is the new code's placement consistent with the codebase's established patterns (one small module per cross-cutting concern, router file per entity, etc.), and free of duplicated logic that should share a helper.
+  3. **Security** — IDOR/visibility bypass on every new endpoint, authz-precedence consistency, ServiceAccount principal safety (a FK column that only expects a `User` row is the recurring bug class here), input validation, data exposure (financial masking, capability gating).
+  4. **Test coverage** — does the new test file actually exercise every branch the audit's other dimensions surfaced (permission-denied paths, private-object 404s on *every* new mutating endpoint, edge cases in any non-trivial date/state-machine logic), not just the happy path.
+  5. **Frontend/UX** — is the new UI actually usable, not just present: do new features have a real entry point a human can find (not API/AI-only), does error handling show a real diagnostic (not a swallowed generic message), is the visual integration consistent with the rest of the app.
+  Run the dimensions as independent reviews (parallel subagents work well here) so each one is unbiased by the others' findings, then spot-check the most severe claims directly against the code before acting on them — an audit finding is a claim to verify, not a fact to trust blindly.
 
 ### Locked decisions (D1–D11 — not open questions, implement to these values)
 
