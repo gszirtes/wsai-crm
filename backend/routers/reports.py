@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import TimeEntry, Project, Deal, EventLog, User
 from auth import require_capability, get_current_user
-from financials import can_view_financials
+from financials import can_view_financials, zero_by_currency
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -31,30 +31,37 @@ def period_start(period: str) -> datetime:
 
 
 @router.get("/utilization", summary="Get team utilization report",
-           description="Per-user total/billable hours, billable amount, and utilization % for the current week or month. Requires view_all_reports (this shows everyone's hours, not just the caller's own). billable_amount figures are null without view_financials -- a user could in principle have view_all_reports but not view_financials, so this is checked independently.")
+           description="Per-user total/billable hours, billable amount, and utilization % for the current week or month. Requires view_all_reports (this shows everyone's hours, not just the caller's own). billable_amount_by_currency figures are null without view_financials -- a user could in principle have view_all_reports but not view_financials, so this is checked independently. Broken out per currency (plan 4.2: a user's projects can span both HUF and EUR, so a single summed total would mix them).")
 def utilization(period: str = "week", db: Session = Depends(get_db),
                 user: User = Depends(require_capability("view_all_reports"))):
     can_see_money = can_view_financials(db, user)
     start = period_start(period)
     entries = db.query(TimeEntry).filter(TimeEntry.entry_date >= start).all()
-    rates = {p.id: (p.hourly_rate or 0) for p in db.query(Project).all()}
+    projects = {p.id: p for p in db.query(Project).all()}
 
     agg = {}
     for e in entries:
-        a = agg.setdefault(e.user_id, {"total": 0.0, "billable": 0.0, "amount": 0.0})
+        a = agg.setdefault(e.user_id, {"total": 0.0, "billable": 0.0, "amount_by_currency": zero_by_currency()})
         a["total"] += e.hours or 0
         if e.billable:
             a["billable"] += e.hours or 0
-            a["amount"] += (e.hours or 0) * rates.get(e.project_id, 0)
+            p = projects.get(e.project_id)
+            if p and p.currency in a["amount_by_currency"]:
+                a["amount_by_currency"][p.currency] += (e.hours or 0) * (p.hourly_rate or 0)
 
     rows = []
+    totals_amount = zero_by_currency()
     for u in db.query(User).filter(User.active == True, User.role != "guest").all():
-        a = agg.get(u.id, {"total": 0.0, "billable": 0.0, "amount": 0.0})
+        a = agg.get(u.id, {"total": 0.0, "billable": 0.0, "amount_by_currency": zero_by_currency()})
+        for cur, amt in a["amount_by_currency"].items():
+            totals_amount[cur] += amt
         rows.append({
             "user_id": u.id, "name": u.name, "role": u.role,
             "total_hours": round(a["total"], 2),
             "billable_hours": round(a["billable"], 2),
-            "billable_amount": round(a["amount"], 2) if can_see_money else None,
+            "billable_amount_by_currency": (
+                {cur: round(amt, 2) for cur, amt in a["amount_by_currency"].items()} if can_see_money else None
+            ),
             "utilization_pct": round((a["billable"] / a["total"] * 100) if a["total"] else 0, 0),
         })
     rows.sort(key=lambda r: r["billable_hours"], reverse=True)
@@ -65,7 +72,9 @@ def utilization(period: str = "week", db: Session = Depends(get_db),
         "totals": {
             "total_hours": round(sum(r["total_hours"] for r in rows), 2),
             "billable_hours": round(sum(r["billable_hours"] for r in rows), 2),
-            "billable_amount": round(sum(a.get("amount", 0) for a in agg.values()), 2) if can_see_money else None,
+            "billable_amount_by_currency": (
+                {cur: round(amt, 2) for cur, amt in totals_amount.items()} if can_see_money else None
+            ),
         },
         "users": rows,
     }
