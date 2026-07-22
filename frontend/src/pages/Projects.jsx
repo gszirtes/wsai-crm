@@ -5,11 +5,10 @@ import { Plus, Pencil, Trash2, FolderKanban, Clock } from "lucide-react";
 import api from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea, Pagination } from "../components/common";
-import { formatMoney } from "../format";
+import { formatMoney, CURRENCIES } from "../format";
 
 const STATUSES = ["planning", "active", "on_hold", "completed", "cancelled"];
 const PRIORITIES = ["low", "medium", "high"];
-const CURRENCIES = ["EUR", "HUF"];
 const MILESTONE_TEMPLATES = ["single_final", "deposit_final", "milestones"];
 const PAGE_SIZE = 12;
 const empty = {

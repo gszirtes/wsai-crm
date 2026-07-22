@@ -6,12 +6,11 @@ import { Plus, Pencil, Trash2, LayoutGrid, List } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, Spinner, Textarea } from "../components/common";
-import { formatMoney } from "../format";
+import { formatMoney, formatMoneyByCurrency, CURRENCIES } from "../format";
 
 const STAGES = ["lead", "qualified", "proposal", "negotiation", "won", "lost"];
 const SOURCES = ["inbound", "outreach", "referral", "other"];
 const LEAD_TYPES = ["single", "double"];
-const CURRENCIES = ["EUR", "HUF"];
 const empty = {
   title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "",
   source: "", unassigned: false, lead_type: "single",
@@ -112,8 +111,7 @@ export default function Deals() {
       const c = d.currency || "EUR";
       totals[c] = (totals[c] || 0) + (d.value || 0);
     });
-    const parts = Object.entries(totals).filter(([, v]) => v).map(([c, v]) => formatMoney(v, c));
-    return parts.length ? parts.join(" · ") : formatMoney(0);
+    return formatMoneyByCurrency(totals);
   };
 
   return (
