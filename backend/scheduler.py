@@ -14,10 +14,11 @@ anything -- the rest no-op immediately. This also covers the same risk from
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import text
-from database import SessionLocal
+from database import SessionLocal, engine
 from models import Project, Deal, Activity, EventLog, User
 from utils import log_event
 from thresholds import get_thresholds, business_days_since
+from routers.notifications import _sync
 
 # Arbitrary fixed key for pg_try_advisory_lock/pg_advisory_unlock -- must be
 # the same constant every time this job runs, and shouldn't collide with any
@@ -30,27 +31,48 @@ def run_daily_housekeeping():
     """Entry point for both the scheduled job and the admin manual-trigger
     endpoint (routers/settings_router.py) -- same function either way, so
     there's no separate "test-only" code path to drift from the real one.
-    Opens its own session (like server.py::seed()) since it runs outside
-    any request context.
+
+    The advisory lock is acquired/released on its own raw Connection
+    (engine.connect()), held open for the job's whole duration, deliberately
+    NOT via a SessionLocal() session. A Session returns its underlying
+    DBAPI connection to the pool on every commit() -- and _run_notification_
+    sync's per-user loop commits repeatedly via notifications.py::_sync --
+    so under real concurrent request traffic (this shares the same pool as
+    every API request, --workers 2), the pool can hand the session a
+    DIFFERENT physical connection for a later statement than the one that
+    took the lock. pg_advisory_unlock would then silently return false (no
+    exception) on a connection that never held the lock, leaving it stuck
+    forever and permanently disabling every future run. Verified this
+    failure mode empirically against a real Postgres instance before fixing
+    it. A plain Connection object, by contrast, stays checked out from the
+    pool until .close() is called explicitly, so the same connection that
+    locks is guaranteed to be the one that unlocks.
     """
-    db = SessionLocal()
+    lock_conn = engine.connect()
     acquired = False
     try:
-        acquired = bool(db.execute(text("SELECT pg_try_advisory_lock(:key)"),
-                                   {"key": ADVISORY_LOCK_KEY}).scalar())
+        acquired = bool(lock_conn.execute(text("SELECT pg_try_advisory_lock(:key)"),
+                                          {"key": ADVISORY_LOCK_KEY}).scalar())
+        lock_conn.commit()
         if not acquired:
             return {"ran": False, "reason": "another worker is already running this job"}
-        now = datetime.now(timezone.utc)
-        result = {"ran": True}
-        result.update(_run_follow_up_tasks(db, now))
-        result.update(_run_stale_flags(db, now))
-        result.update(_run_notification_sync(db))
-        db.commit()
-        return result
+
+        db = SessionLocal()
+        try:
+            now = datetime.now(timezone.utc)
+            result = {"ran": True}
+            result.update(_run_follow_up_tasks(db, now))
+            result.update(_run_stale_flags(db, now))
+            result.update(_run_notification_sync(db))
+            db.commit()
+            return result
+        finally:
+            db.close()
     finally:
         if acquired:
-            db.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": ADVISORY_LOCK_KEY})
-        db.close()
+            lock_conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": ADVISORY_LOCK_KEY})
+            lock_conn.commit()
+        lock_conn.close()
 
 
 def _run_follow_up_tasks(db, now) -> dict:
@@ -78,6 +100,10 @@ def _run_follow_up_tasks(db, now) -> dict:
                     owner_id=p.owner_id)
         db.add(a)
         db.flush()
+        # Matches activities.py::_log_activity_created's convention of every
+        # Activity getting its own "created" event, in addition to the
+        # project-scoped marker below (which is what makes this idempotent).
+        log_event(db, "activity", a.id, "created", actor=None, actor_type="service")
         log_event(db, "project", p.id, "follow_up_task_created", actor=None, actor_type="service",
                  activity_id=a.id)
         created += 1
@@ -109,7 +135,6 @@ def _run_notification_sync(db) -> dict:
     checks only ever ran when a user happened to call GET /notifications --
     reuse the exact same _sync() (no duplicated logic) for every active user
     so they don't depend on who opens the app that day."""
-    from routers.notifications import _sync
     users = db.query(User).filter(User.active == True).all()
     for u in users:
         _sync(db, u)
