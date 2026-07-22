@@ -184,6 +184,8 @@ def complete_follow_up(project_id: str, payload: FollowUpComplete, db: Session =
         db.add(d)
         db.flush()
         log_event(db, "deal", d.id, "created", user, note=f"referral loop from project {p.id}")
+        if isinstance(user, User):
+            add_member(db, "deal", d.id, user.id, added_by=user)
         if REFERRER_TAG not in (contact.tags or []):
             contact.tags = [*(contact.tags or []), REFERRER_TAG]
         referral_deal_id = d.id
