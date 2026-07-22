@@ -2,11 +2,15 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
-from models import TimeEntry, Project, User
+from models import TimeEntry, Project, Deal, EventLog, User
 from auth import require_capability, get_current_user
 from financials import can_view_financials
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 def period_start(period: str) -> datetime:
@@ -56,4 +60,58 @@ def utilization(period: str = "week", db: Session = Depends(get_db),
             "billable_amount": round(sum(a.get("amount", 0) for a in agg.values()), 2) if can_see_money else None,
         },
         "users": rows,
+    }
+
+
+@router.get("/deal-flow", summary="Get deal-flow report",
+           description="2.3: won/lost ratio, average pass count (ball_in_court direction changes, D4) to won deals, and average days spent per stage -- reconstructed from the EventLog stage_changed history, same as utilization not visibility-scoped (view_all_reports implies org-wide reporting). Requires view_all_reports.")
+def deal_flow(db: Session = Depends(get_db), user: User = Depends(require_capability("view_all_reports"))):
+    now = datetime.now(timezone.utc)
+    deals = db.query(Deal).all()
+    deal_ids = [d.id for d in deals]
+    events = db.query(EventLog).filter(EventLog.entity_type == "deal", EventLog.entity_id.in_(deal_ids)) \
+        .order_by(EventLog.entity_id, EventLog.created_at.asc()).all() if deal_ids else []
+    events_by_deal = {}
+    for e in events:
+        events_by_deal.setdefault(e.entity_id, []).append(e)
+
+    won = lost = 0
+    pass_counts_to_won = []
+    stage_durations_days = {}
+
+    for d in deals:
+        if d.stage == "won":
+            won += 1
+        elif d.stage == "lost":
+            lost += 1
+
+        deal_events = events_by_deal.get(d.id, [])
+        stage_changes = [e for e in deal_events if e.event_type == "stage_changed"]
+        pass_changes = [e for e in deal_events if e.event_type == "ball_in_court_changed"]
+
+        if d.stage == "won":
+            pass_counts_to_won.append(len(pass_changes))
+
+        # Reconstruct time-in-stage from the stage_changed history: from_value
+        # on the first transition is the stage the deal was created in.
+        cursor_time = _aware(d.created_at)
+        cursor_stage = stage_changes[0].from_value if stage_changes else d.stage
+        for sc in stage_changes:
+            sc_time = _aware(sc.created_at)
+            stage_durations_days.setdefault(cursor_stage, []).append((sc_time - cursor_time).total_seconds() / 86400)
+            cursor_time = sc_time
+            cursor_stage = sc.to_value
+        stage_durations_days.setdefault(cursor_stage, []).append((now - cursor_time).total_seconds() / 86400)
+
+    avg_days_per_stage = {
+        stage: round(sum(durs) / len(durs), 2)
+        for stage, durs in stage_durations_days.items()
+    }
+
+    return {
+        "won": won,
+        "lost": lost,
+        "won_lost_ratio": round(won / lost, 2) if lost else None,
+        "avg_passes_to_won": round(sum(pass_counts_to_won) / len(pass_counts_to_won), 2) if pass_counts_to_won else 0,
+        "avg_days_per_stage": avg_days_per_stage,
     }

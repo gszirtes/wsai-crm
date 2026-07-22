@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Deal, Company, Contact, Activity, User
+from models import Deal, Company, Contact, Activity, EventLog, User
 from schemas import (DealCreate, DealOut, StageUpdate, VisibilityUpdate, MemberAdd,
                      ActivityOut, OwnerUpdate, BallInCourtUpdate)
 from auth import get_current_user, require_capability
@@ -88,6 +88,29 @@ def deal_detail(deal_id: str, db: Session = Depends(get_db),
         "owner_name": owner.name if owner else None,
         "activities": [ActivityOut.model_validate(a).model_dump() for a in activities],
     }
+
+
+@router.get("/{deal_id}/timeline",
+           summary="Get deal lifecycle timeline", description="2.3: this deal's EventLog rows (entity_type='deal'), chronological, each enriched with the linked Activity's direction/subject where the event has one (activity_logged events). 404 if it's private and this user isn't admin/manager/owner/member, or if the deal was hard-deleted (no dangling-id read).")
+def deal_timeline(deal_id: str, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d or not can_see(db, "deal", d, user):
+        raise HTTPException(status_code=404, detail="Deal not found")
+    events = db.query(EventLog).filter(EventLog.entity_type == "deal", EventLog.entity_id == deal_id) \
+        .order_by(EventLog.created_at.asc()).all()
+    activity_ids = [e.activity_id for e in events if e.activity_id]
+    activities = {a.id: a for a in db.query(Activity).filter(Activity.id.in_(activity_ids)).all()} if activity_ids else {}
+    out = []
+    for e in events:
+        a = activities.get(e.activity_id)
+        out.append({
+            "id": e.id, "event_type": e.event_type, "from_value": e.from_value, "to_value": e.to_value,
+            "actor_type": e.actor_type, "actor_id": e.actor_id, "note": e.note, "created_at": e.created_at,
+            "activity_direction": a.direction if a else None,
+            "activity_subject": a.subject if a else None,
+        })
+    return out
 
 
 @router.get("/{deal_id}", response_model=DealOut,
