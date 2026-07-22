@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Clock, Plus, Pencil, Trash2, Activity as ActIcon, Building2, User, Milestone as MilestoneIcon } from "lucide-react";
+import { ArrowLeft, Clock, Plus, Pencil, Trash2, Activity as ActIcon, Building2, User, Milestone as MilestoneIcon, MessageCircle } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Field, Select, Badge, Spinner, Modal } from "../components/common";
@@ -35,12 +35,16 @@ export default function ProjectDetail() {
   const [msForm, setMsForm] = useState(emptyMilestone);
   const [editingMs, setEditingMs] = useState(null);
   const [msError, setMsError] = useState("");
+  const [contacts, setContacts] = useState([]);
+  const [fuForm, setFuForm] = useState({ satisfaction_score: "", hasReferral: false, referred_contact_id: "" });
+  const [fuError, setFuError] = useState("");
 
   const load = useCallback(() => {
     api.get(`/projects/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/projects"));
     api.get(`/projects/${id}/milestones`).then((r) => setMilestones(r.data));
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get("/contacts").then((r) => setContacts(r.data)); }, []);
 
   if (!data) return <Spinner />;
   const p = data.project;
@@ -107,6 +111,22 @@ export default function ProjectDetail() {
     }
   };
 
+  const completeFollowUp = async () => {
+    const payload = {
+      satisfaction_score: fuForm.satisfaction_score ? parseInt(fuForm.satisfaction_score, 10) : null,
+      referred_contact_id: fuForm.hasReferral && fuForm.referred_contact_id ? fuForm.referred_contact_id : null,
+    };
+    try {
+      await api.post(`/projects/${id}/follow-up`, payload);
+      setFuForm({ satisfaction_score: "", hasReferral: false, referred_contact_id: "" });
+      setFuError("");
+      load();
+    } catch (e) {
+      console.error("Follow-up completion failed:", e);
+      setFuError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
   const remaining = Math.max(0, (p.estimated_hours || 0) - data.logged_hours);
   const overBudget = p.estimated_hours > 0 && data.logged_hours > p.estimated_hours;
 
@@ -132,6 +152,43 @@ export default function ProjectDetail() {
       </div>
 
       {p.description && <p className="text-sm text-muted max-w-2xl">{p.description}</p>}
+
+      {(p.closed_at || p.satisfaction_score != null) && (
+        <div className="flex items-center gap-4 text-xs text-muted">
+          {p.closed_at && <span>{t("project.closedAt")}: {new Date(p.closed_at).toLocaleDateString()}</span>}
+          {p.satisfaction_score != null && <span data-testid="satisfaction-score">{t("followup.satisfaction")}: {p.satisfaction_score}/5</span>}
+        </div>
+      )}
+
+      {data.pending_follow_up && (
+        <div className="border border-amber-500/40 rounded-sm p-6" data-testid="follow-up-card">
+          <h3 className="font-display font-bold flex items-center gap-2 mb-1"><MessageCircle size={18} className="text-amber-500" />{t("followup.title")}</h3>
+          <p className="text-sm text-muted mb-4">{t("followup.hint")}</p>
+          {fuError && <p className="text-sm text-danger mb-3">{fuError}</p>}
+          <Field label={t("followup.satisfaction")}>
+            <Select data-testid="followup-satisfaction" value={fuForm.satisfaction_score}
+              onChange={(e) => setFuForm({ ...fuForm, satisfaction_score: e.target.value })}>
+              <option value="">—</option>
+              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+            </Select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm mt-3">
+            <input type="checkbox" data-testid="followup-has-referral" checked={fuForm.hasReferral}
+              onChange={(e) => setFuForm({ ...fuForm, hasReferral: e.target.checked })} />
+            {t("followup.hasReferral")}
+          </label>
+          {fuForm.hasReferral && (
+            <Field label={t("followup.referredContact")}>
+              <Select data-testid="followup-referred-contact" value={fuForm.referred_contact_id}
+                onChange={(e) => setFuForm({ ...fuForm, referred_contact_id: e.target.value })}>
+                <option value="">—</option>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+              </Select>
+            </Field>
+          )}
+          <Button onClick={completeFollowUp} data-testid="complete-followup-btn" className="mt-4">{t("followup.complete")}</Button>
+        </div>
+      )}
 
       {/* Milestones (client-facing billing view -- shown before the internal hourly figures, per plan 4.5) */}
       <div className="border border-border rounded-sm p-6" data-testid="milestones-panel">

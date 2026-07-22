@@ -32,6 +32,7 @@ export default function Deals() {
   const [error, setError] = useState("");
   const [ourTurnOnly, setOurTurnOnly] = useState(false);
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [staleOnly, setStaleOnly] = useState(false);
 
   const load = useCallback(() => {
     api.get("/deals").then((r) => setItems(r.data))
@@ -102,7 +103,8 @@ export default function Deals() {
 
   const visibleItems = (items || [])
     .filter((d) => !ourTurnOnly || d.ball_in_court === "us")
-    .filter((d) => !unassignedOnly || !d.owner_id);
+    .filter((d) => !unassignedOnly || !d.owner_id)
+    .filter((d) => !staleOnly || d.is_stale);
   const byStage = (s) => visibleItems.filter((d) => d.stage === s);
   // Plan 4.2: never sum HUF+EUR into one total -- group by currency first.
   const stageTotalLabel = (s) => {
@@ -130,6 +132,10 @@ export default function Deals() {
           <Button variant={unassignedOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
             onClick={() => setUnassignedOnly(!unassignedOnly)} data-testid="unassigned-filter">
             {t("deal.unassigned")}
+          </Button>
+          <Button variant={staleOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setStaleOnly(!staleOnly)} data-testid="stale-filter">
+            {t("deal.stale")}
           </Button>
           {writable && <Button onClick={openNew} data-testid="add-deal-btn"><Plus size={16} /><span className="hidden sm:inline">{t("deal.newDeal")}</span></Button>}
         </div>
@@ -175,6 +181,7 @@ export default function Deals() {
                                   <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
                                     label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
                                 )}
+                                {d.is_stale && <Badge value="lost" label={t("deal.stale")} />}
                               </div>
                             </div>
                           )}
@@ -201,6 +208,7 @@ export default function Deals() {
                 <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
                   label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
               )}
+              {d.is_stale && <Badge value="lost" label={t("deal.stale")} />}
               <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
               {writable && (
                 <div className="flex gap-1 shrink-0">

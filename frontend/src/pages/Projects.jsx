@@ -13,7 +13,7 @@ const MILESTONE_TEMPLATES = ["single_final", "deposit_final", "milestones"];
 const PAGE_SIZE = 12;
 const empty = {
   name: "", description: "", status: "planning", priority: "medium", budget: 0, estimated_hours: 0,
-  hourly_rate: 0, currency: "EUR", company_id: "", milestone_template: "single_final",
+  hourly_rate: 0, currency: "EUR", company_id: "", milestone_template: "single_final", follow_up_days: 60,
 };
 
 export default function Projects() {
@@ -41,7 +41,11 @@ export default function Projects() {
   const openNew = () => { setForm(empty); setEditing(null); setModal(true); };
   const openEdit = (p) => { setForm({ ...empty, ...p, company_id: p.company_id || "" }); setEditing(p.id); setModal(true); };
   const save = async () => {
-    const payload = { ...form, budget: parseFloat(form.budget) || 0, estimated_hours: parseFloat(form.estimated_hours) || 0, hourly_rate: parseFloat(form.hourly_rate) || 0, company_id: form.company_id || null };
+    const payload = {
+      ...form, budget: parseFloat(form.budget) || 0, estimated_hours: parseFloat(form.estimated_hours) || 0,
+      hourly_rate: parseFloat(form.hourly_rate) || 0, follow_up_days: parseInt(form.follow_up_days, 10) || 0,
+      company_id: form.company_id || null,
+    };
     if (editing) await api.put(`/projects/${editing}`, payload);
     else await api.post("/projects", payload);
     setModal(false); load();
@@ -133,6 +137,9 @@ export default function Projects() {
           <Field label={t("time.estimated") + " (" + t("time.hours").toLowerCase() + ")"}><Input data-testid="project-estimated-hours" type="number" value={form.estimated_hours} onChange={set("estimated_hours")} /></Field>
           <Field label={t("time.rate")}><Input data-testid="project-hourly-rate" type="number" value={form.hourly_rate} onChange={set("hourly_rate")} /></Field>
         </div>
+        <Field label={t("project.followUpDays")}>
+          <Input data-testid="project-follow-up-days" type="number" value={form.follow_up_days} onChange={set("follow_up_days")} />
+        </Field>
         {!editing && (
           <Field label={t("milestone.template")}>
             <Select data-testid="project-milestone-template" value={form.milestone_template} onChange={set("milestone_template")}>

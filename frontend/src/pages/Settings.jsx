@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Calendar, Check, X, ShieldCheck } from "lucide-react";
+import { Sparkles, Calendar, Check, X, ShieldCheck, Timer } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { Button, Input, Select, Field, Badge } from "../components/common";
 
@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const [capabilities, setCapabilities] = useState(null);
   const [capsSaved, setCapsSaved] = useState(false);
   const [error, setError] = useState("");
+  const [housekeeping, setHousekeeping] = useState(null);
+  const [housekeepingRunning, setHousekeepingRunning] = useState(false);
 
   useEffect(() => {
     api.get("/settings").then((r) => {
@@ -72,6 +74,20 @@ export default function SettingsPage() {
     } catch (e) {
       console.error("Settings request failed:", e);
       setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const runHousekeeping = async () => {
+    setHousekeepingRunning(true);
+    setError("");
+    try {
+      const r = await api.post("/settings/housekeeping/run");
+      setHousekeeping(r.data);
+    } catch (e) {
+      console.error("Housekeeping run failed:", e);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    } finally {
+      setHousekeepingRunning(false);
     }
   };
 
@@ -193,6 +209,35 @@ export default function SettingsPage() {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Housekeeping job (Phase 5) */}
+      <div className="border border-border rounded-sm p-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-sm bg-amber-500/15 text-amber-600 flex items-center justify-center"><Timer size={18} /></div>
+          <div>
+            <h3 className="font-display font-bold">{t("settings.housekeeping")}</h3>
+            <p className="text-sm text-muted">{t("settings.housekeepingDesc")}</p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <Button onClick={runHousekeeping} disabled={housekeepingRunning} data-testid="run-housekeeping-btn">
+            {housekeepingRunning ? t("settings.housekeepingRunning") : t("settings.housekeepingRun")}
+          </Button>
+          {housekeeping && (
+            <div className="mt-3 text-sm text-muted space-y-1" data-testid="housekeeping-result">
+              {housekeeping.ran ? (
+                <>
+                  <div>{t("settings.housekeepingFollowUps")}: {housekeeping.follow_up_tasks_created}</div>
+                  <div>{t("settings.housekeepingStale")}: {housekeeping.deals_stale_flag_changed}</div>
+                  <div>{t("settings.housekeepingNotifications")}: {housekeeping.users_notifications_synced}</div>
+                </>
+              ) : (
+                <div>{t("settings.housekeepingSkipped")}</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Google Workspace */}
