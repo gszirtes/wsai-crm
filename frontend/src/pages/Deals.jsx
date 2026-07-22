@@ -23,6 +23,7 @@ export default function Deals() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
+  const [ourTurnOnly, setOurTurnOnly] = useState(false);
 
   const load = useCallback(() => {
     api.get("/deals").then((r) => setItems(r.data))
@@ -69,7 +70,8 @@ export default function Deals() {
     }
   };
 
-  const byStage = (s) => (items || []).filter((d) => d.stage === s);
+  const visibleItems = (items || []).filter((d) => !ourTurnOnly || d.ball_in_court === "us");
+  const byStage = (s) => visibleItems.filter((d) => d.stage === s);
   const stageTotal = (s) => byStage(s).reduce((a, d) => a + (d.value || 0), 0);
 
   return (
@@ -81,6 +83,10 @@ export default function Deals() {
             <button onClick={() => setView("board")} data-testid="deals-view-board" className={`p-2 transition-colors ${view === "board" ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}><LayoutGrid size={16} /></button>
             <button onClick={() => setView("list")} data-testid="deals-view-list" className={`p-2 transition-colors ${view === "list" ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}><List size={16} /></button>
           </div>
+          <Button variant={ourTurnOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setOurTurnOnly(!ourTurnOnly)} data-testid="ball-in-court-filter">
+            {t("deal.ballInCourtFilter")}
+          </Button>
           {writable && <Button onClick={openNew} data-testid="add-deal-btn"><Plus size={16} /><span className="hidden sm:inline">{t("deal.newDeal")}</span></Button>}
         </div>
       </div>
@@ -119,7 +125,13 @@ export default function Deals() {
                                 )}
                               </div>
                               <div className="font-display font-bold text-lg mt-1">{eur(d.value)}</div>
-                              <div className="text-xs text-muted mt-1">{d.probability}%</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs text-muted">{d.probability}%</span>
+                                {d.ball_in_court && d.ball_in_court !== "none" && (
+                                  <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
+                                    label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
+                                )}
+                              </div>
                             </div>
                           )}
                         </Draggable>
@@ -134,13 +146,17 @@ export default function Deals() {
         </DragDropContext>
       ) : (
         <div className="border border-border rounded-sm overflow-hidden stagger">
-          {items.map((d) => (
+          {visibleItems.map((d) => (
             <div key={d.id} data-testid={`deal-row-${d.id}`} onClick={() => navigate(`/deals/${d.id}`)} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors cursor-pointer">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">{d.title}</div>
                 <div className="text-xs text-muted">{d.probability}%</div>
               </div>
               <span className="font-display font-bold">{eur(d.value)}</span>
+              {d.ball_in_court && d.ball_in_court !== "none" && (
+                <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
+                  label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
+              )}
               <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
               {writable && (
                 <div className="flex gap-1 shrink-0">
