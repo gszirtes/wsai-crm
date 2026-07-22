@@ -126,7 +126,7 @@ export default function DealDetail() {
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">{t("deal.ballInCourt")}:</span>
             <Select value={d.ball_in_court || "none"} onChange={(e) => setBallInCourt(e.target.value)}
-              data-testid="ball-in-court-select" className="w-auto">
+              data-testid="ball-in-court-select" className="!w-auto">
               {BALL_IN_COURT_OPTIONS.map((v) => <option key={v} value={v}>{t(`deal.ballInCourt_${v}`)}</option>)}
             </Select>
           </div>

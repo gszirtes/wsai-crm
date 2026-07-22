@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Clock, Plus, Pencil, Trash2, Activity as ActIcon, Building2, User, Milestone as MilestoneIcon } from "lucide-react";
-import api from "../api";
+import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Field, Select, Badge, Spinner, Modal } from "../components/common";
 import VisibilityMembers from "../components/VisibilityMembers";
@@ -34,6 +34,7 @@ export default function ProjectDetail() {
   const [msModal, setMsModal] = useState(false);
   const [msForm, setMsForm] = useState(emptyMilestone);
   const [editingMs, setEditingMs] = useState(null);
+  const [msError, setMsError] = useState("");
 
   const load = useCallback(() => {
     api.get(`/projects/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/projects"));
@@ -57,33 +58,53 @@ export default function ProjectDetail() {
     await api.delete(`/projects/${id}/time/${eid}`); load();
   };
 
-  const openNewMs = () => { setMsForm(emptyMilestone); setEditingMs(null); setMsModal(true); };
+  const openNewMs = () => { setMsForm(emptyMilestone); setEditingMs(null); setMsError(""); setMsModal(true); };
   const openEditMs = (m) => {
     setMsForm({
       name: m.name, due_date: m.due_date ? m.due_date.slice(0, 10) : "",
       mode: m.percentage != null ? "percentage" : "amount",
       amount: m.amount ?? "", percentage: m.percentage ?? "",
     });
-    setEditingMs(m.id); setMsModal(true);
+    setEditingMs(m.id); setMsError(""); setMsModal(true);
   };
   const saveMs = async () => {
+    const activeValue = msForm.mode === "amount" ? msForm.amount : msForm.percentage;
+    if (activeValue === "" || activeValue == null) {
+      setMsError(t("milestone.valueRequired"));
+      return;
+    }
     const payload = {
       name: msForm.name,
       due_date: msForm.due_date || null,
       amount: msForm.mode === "amount" ? parseFloat(msForm.amount) || 0 : null,
       percentage: msForm.mode === "percentage" ? parseFloat(msForm.percentage) || 0 : null,
     };
-    if (editingMs) await api.put(`/projects/${id}/milestones/${editingMs}`, payload);
-    else await api.post(`/projects/${id}/milestones`, payload);
-    setMsModal(false); load();
+    try {
+      if (editingMs) await api.put(`/projects/${id}/milestones/${editingMs}`, payload);
+      else await api.post(`/projects/${id}/milestones`, payload);
+      setMsModal(false); setMsError(""); load();
+    } catch (e) {
+      console.error("Milestone save failed:", e);
+      setMsError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
   const delMs = async (mid) => {
     if (!window.confirm(t("common.confirmDelete"))) return;
-    await api.delete(`/projects/${id}/milestones/${mid}`); load();
+    try {
+      await api.delete(`/projects/${id}/milestones/${mid}`); load();
+    } catch (e) {
+      console.error("Milestone delete failed:", e);
+      setMsError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
   const setMsStatus = async (mid, patch) => {
-    await api.patch(`/projects/${id}/milestones/${mid}/status`, patch);
-    load();
+    try {
+      await api.patch(`/projects/${id}/milestones/${mid}/status`, patch);
+      load();
+    } catch (e) {
+      console.error("Milestone status change failed:", e);
+      setMsError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
 
   const remaining = Math.max(0, (p.estimated_hours || 0) - data.logged_hours);
@@ -118,6 +139,7 @@ export default function ProjectDetail() {
           <h3 className="font-display font-bold flex items-center gap-2"><MilestoneIcon size={18} className="text-primary" />{t("milestone.title")}</h3>
           {writable && <Button onClick={openNewMs} data-testid="add-milestone-btn"><Plus size={16} />{t("milestone.add")}</Button>}
         </div>
+        {msError && <p className="text-sm text-danger mb-3" data-testid="milestone-error">{msError}</p>}
         {milestones?.budget_mismatch && (
           <p className="text-xs text-amber-600 mb-3" data-testid="milestone-mismatch-warning">{t("milestone.budgetMismatch")}</p>
         )}
@@ -141,11 +163,11 @@ export default function ProjectDetail() {
               {writable ? (
                 <>
                   <Select value={m.work_status} onChange={(e) => setMsStatus(m.id, { work_status: e.target.value })}
-                    data-testid={`ms-work-status-${m.id}`} className="w-auto text-xs">
+                    data-testid={`ms-work-status-${m.id}`} className="!w-auto text-xs">
                     {WORK_STATUSES.map((s) => <option key={s} value={s}>{t(`milestone.workStatus_${s}`)}</option>)}
                   </Select>
                   <Select value={m.payment_status} onChange={(e) => setMsStatus(m.id, { payment_status: e.target.value })}
-                    data-testid={`ms-payment-status-${m.id}`} className="w-auto text-xs">
+                    data-testid={`ms-payment-status-${m.id}`} className="!w-auto text-xs">
                     {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`milestone.paymentStatus_${s}`)}</option>)}
                   </Select>
                   <button onClick={() => openEditMs(m)} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
@@ -153,8 +175,8 @@ export default function ProjectDetail() {
                 </>
               ) : (
                 <>
-                  <Badge label={t(`milestone.workStatus_${m.work_status}`)} />
-                  <Badge label={t(`milestone.paymentStatus_${m.payment_status}`)} />
+                  <Badge value={m.work_status} label={t(`milestone.workStatus_${m.work_status}`)} />
+                  <Badge value={m.payment_status} label={t(`milestone.paymentStatus_${m.payment_status}`)} />
                 </>
               )}
             </div>
