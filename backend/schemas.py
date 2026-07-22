@@ -13,6 +13,7 @@ UserRole = Literal["admin", "manager", "user", "guest"]
 Visibility = Literal["public", "private"]
 DealSource = Literal["inbound", "outreach", "referral", "other"]
 BallInCourt = Literal["us", "them", "none"]
+LeadType = Literal["single", "double"]
 
 
 # ---------- Auth ----------
@@ -116,6 +117,13 @@ class DealBase(BaseModel):
     company_id: Optional[str] = None
     contact_id: Optional[str] = None
     source: Optional[DealSource] = None
+    lead_type: Optional[LeadType] = "single"
+    # Only meaningful when lead_type="double": the paying/contracting party,
+    # when it differs from the day-to-day contact above. Unvalidated against
+    # lead_type on purpose -- Fazis 3 adds the fields, not a stage guard.
+    contract_company_id: Optional[str] = None
+    contract_contact_id: Optional[str] = None
+    referred_by_contact_id: Optional[str] = None
 
 
 class DealCreate(DealBase):
