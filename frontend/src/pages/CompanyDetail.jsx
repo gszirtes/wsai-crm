@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, Globe, Users, Handshake, FolderKanban } from "lucide-react";
 import api from "../api";
 import { Badge, Spinner } from "../components/common";
+import { formatMoney } from "../format";
 
 export default function CompanyDetail() {
   const { id } = useParams();
@@ -18,7 +19,6 @@ export default function CompanyDetail() {
 
   if (!data) return <Spinner />;
   const c = data.company;
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   return (
     <div className="space-y-6">
@@ -48,7 +48,7 @@ export default function CompanyDetail() {
           {data.deals.length === 0 ? <p className="text-sm text-muted">{t("detail.noItems")}</p> : (
             <div className="space-y-2">
               {data.deals.map((x) => (
-                <div key={x.id} className="flex items-center justify-between text-sm"><span className="truncate">{x.title}</span><span className="font-medium shrink-0">{eur(x.value)}</span></div>
+                <div key={x.id} className="flex items-center justify-between text-sm"><span className="truncate">{x.title}</span><span className="font-medium shrink-0">{formatMoney(x.value, x.currency)}</span></div>
               ))}
             </div>
           )}

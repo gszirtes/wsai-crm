@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from "recharts";
 import api from "../api";
 import { Spinner } from "../components/common";
+import { formatMoney } from "../format";
 
 const COLORS = ["#4338CA", "#00E5FF", "#10B981", "#F59E0B", "#8b5cf6", "#EF4444"];
 
@@ -16,7 +17,12 @@ export default function Utilization() {
     api.get("/reports/utilization", { params: { period } }).then((r) => setData(r.data));
   }, [period]);
 
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
+  // Plan 4.2: never sum HUF+EUR -- render each nonzero currency separately.
+  const moneyByCurrency = (byCurrency) => {
+    if (byCurrency == null) return "—";
+    const parts = Object.entries(byCurrency).filter(([, v]) => v).map(([c, v]) => formatMoney(v, c));
+    return parts.length ? parts.join(" · ") : formatMoney(0);
+  };
 
   return (
     <div className="space-y-6">
@@ -45,7 +51,7 @@ export default function Utilization() {
             </div>
             <div className="border border-border rounded-sm p-5">
               <div className="text-xs uppercase tracking-[0.15em] text-muted">{t("util.amount")}</div>
-              <div className="font-display text-3xl font-bold mt-2">{eur(data.totals.billable_amount)}</div>
+              <div className="font-display text-3xl font-bold mt-2">{moneyByCurrency(data.totals.billable_amount_by_currency)}</div>
             </div>
           </div>
 
@@ -82,7 +88,7 @@ export default function Utilization() {
                 </div>
                 <div className="col-span-2 text-right">{u.total_hours}h</div>
                 <div className="col-span-2 text-right font-medium">{u.billable_hours}h</div>
-                <div className="col-span-3 text-right">{eur(u.billable_amount)}</div>
+                <div className="col-span-3 text-right">{moneyByCurrency(u.billable_amount_by_currency)}</div>
               </div>
             ))}
           </div>

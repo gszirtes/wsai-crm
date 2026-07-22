@@ -6,10 +6,12 @@ import { Plus, Pencil, Trash2, LayoutGrid, List } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, Spinner, Textarea } from "../components/common";
+import { formatMoney } from "../format";
 
 const STAGES = ["lead", "qualified", "proposal", "negotiation", "won", "lost"];
 const SOURCES = ["inbound", "outreach", "referral", "other"];
 const LEAD_TYPES = ["single", "double"];
+const CURRENCIES = ["EUR", "HUF"];
 const empty = {
   title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "",
   source: "", unassigned: false, lead_type: "single",
@@ -76,7 +78,6 @@ export default function Deals() {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const toggleUnassigned = (e) => setForm({ ...form, unassigned: e.target.checked });
 
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
   const companyOptions = companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
   const contactOptions = contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>);
 
@@ -104,7 +105,16 @@ export default function Deals() {
     .filter((d) => !ourTurnOnly || d.ball_in_court === "us")
     .filter((d) => !unassignedOnly || !d.owner_id);
   const byStage = (s) => visibleItems.filter((d) => d.stage === s);
-  const stageTotal = (s) => byStage(s).reduce((a, d) => a + (d.value || 0), 0);
+  // Plan 4.2: never sum HUF+EUR into one total -- group by currency first.
+  const stageTotalLabel = (s) => {
+    const totals = {};
+    byStage(s).forEach((d) => {
+      const c = d.currency || "EUR";
+      totals[c] = (totals[c] || 0) + (d.value || 0);
+    });
+    const parts = Object.entries(totals).filter(([, v]) => v).map(([c, v]) => formatMoney(v, c));
+    return parts.length ? parts.join(" · ") : formatMoney(0);
+  };
 
   return (
     <div className="space-y-5">
@@ -142,7 +152,7 @@ export default function Deals() {
                       <span className="text-xs uppercase tracking-[0.1em] font-medium">{t(`statuses.${s}`)}</span>
                       <span className="text-xs text-muted">{byStage(s).length}</span>
                     </div>
-                    <div className="px-2 py-1 text-[11px] text-muted border-b border-border">{eur(stageTotal(s))}</div>
+                    <div className="px-2 py-1 text-[11px] text-muted border-b border-border">{stageTotalLabel(s)}</div>
                     <div className="p-2 space-y-2 min-h-[80px]">
                       {byStage(s).map((d, i) => (
                         <Draggable draggableId={d.id} index={i} key={d.id} isDragDisabled={!writable}>
@@ -160,7 +170,7 @@ export default function Deals() {
                                   </div>
                                 )}
                               </div>
-                              <div className="font-display font-bold text-lg mt-1">{eur(d.value)}</div>
+                              <div className="font-display font-bold text-lg mt-1">{formatMoney(d.value, d.currency)}</div>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-xs text-muted">{d.probability}%</span>
                                 {d.ball_in_court && d.ball_in_court !== "none" && (
@@ -188,7 +198,7 @@ export default function Deals() {
                 <div className="text-sm font-medium truncate">{d.title}</div>
                 <div className="text-xs text-muted">{d.probability}%</div>
               </div>
-              <span className="font-display font-bold">{eur(d.value)}</span>
+              <span className="font-display font-bold">{formatMoney(d.value, d.currency)}</span>
               {d.ball_in_court && d.ball_in_court !== "none" && (
                 <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
                   label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
@@ -211,8 +221,13 @@ export default function Deals() {
           <Button onClick={save} data-testid="save-deal-btn">{t("common.save")}</Button>
         </>}>
         <Field label={t("deal.name")}><Input data-testid="deal-title" value={form.title} onChange={set("title")} /></Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Field label={t("deal.value")}><Input data-testid="deal-value" type="number" value={form.value} onChange={set("value")} /></Field>
+          <Field label={t("deal.currency")}>
+            <Select data-testid="deal-currency" value={form.currency || "EUR"} onChange={set("currency")}>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
           <Field label={t("deal.stage")}>
             <Select value={form.stage} onChange={set("stage")}>
               {STAGES.map((s) => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}

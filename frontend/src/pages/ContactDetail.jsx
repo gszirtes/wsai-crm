@@ -5,6 +5,7 @@ import { ArrowLeft, Mail, Phone, Building2, Handshake, Activity as ActIcon, User
 import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
+import { formatMoney } from "../format";
 
 const REFERRER_TAG = "referrer";
 
@@ -54,7 +55,6 @@ export default function ContactDetail() {
 
   if (!data) return <Spinner />;
   const c = data.contact;
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   return (
     <div className="space-y-6">
@@ -100,7 +100,7 @@ export default function ContactDetail() {
             {data.deals.map((d) => (
               <Link to="/deals" key={d.id} className="flex items-center justify-between text-sm hover:text-primary transition-colors">
                 <span className="truncate">{d.title}</span>
-                <span className="flex items-center gap-2 shrink-0"><span className="font-medium">{eur(d.value)}</span><Badge value={d.stage} label={t(`statuses.${d.stage}`)} /></span>
+                <span className="flex items-center gap-2 shrink-0"><span className="font-medium">{formatMoney(d.value, d.currency)}</span><Badge value={d.stage} label={t(`statuses.${d.stage}`)} /></span>
               </Link>
             ))}
           </div>

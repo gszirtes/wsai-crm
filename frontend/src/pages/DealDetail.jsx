@@ -6,6 +6,7 @@ import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
 import VisibilityMembers from "../components/VisibilityMembers";
+import { formatMoney } from "../format";
 
 const TYPES = ["call", "email", "meeting", "task", "note"];
 const BALL_IN_COURT_OPTIONS = ["us", "them", "none"];
@@ -70,7 +71,6 @@ export default function DealDetail() {
 
   if (!data) return <Spinner />;
   const d = data.deal;
-  const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
   const passCount = (timeline || []).filter((e) => e.event_type === "ball_in_court_changed").length;
   const throughputDays = timeline && timeline.length
@@ -99,7 +99,7 @@ export default function DealDetail() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{d.title}</h1>
-          <div className="font-display text-3xl font-bold mt-2">{eur(d.value)}</div>
+          <div className="font-display text-3xl font-bold mt-2">{formatMoney(d.value, d.currency)}</div>
         </div>
         <div className="flex items-center gap-2">
           {d.ball_in_court && d.ball_in_court !== "none" && (
