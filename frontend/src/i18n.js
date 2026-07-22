@@ -84,6 +84,7 @@ const en = {
       referrals: "Referrals",
       referralsCount: "Deals referred",
       referralsWon: "Won",
+      referrersOnly: "Referrers only",
     },
     company: {
       title: "Companies",
@@ -129,6 +130,7 @@ const en = {
       leadType: "Lead type",
       leadType_single: "Single-sided",
       leadType_double: "Double-sided",
+      leadTypeHint: "Double-sided: the paying/contracting party is a different company or contact than who you'll be working with day-to-day.",
       contractCompany: "Contracting company",
       contractContact: "Contracting contact",
       referredBy: "Referred by",
@@ -362,6 +364,7 @@ const hu = {
       referrals: "Beajánlások",
       referralsCount: "Beajánlott dealek",
       referralsWon: "Megnyert",
+      referrersOnly: "Csak beajánlók",
     },
     company: {
       title: "Cégek",
@@ -407,6 +410,7 @@ const hu = {
       leadType: "Lead-típus",
       leadType_single: "Egyoldalú",
       leadType_double: "Kétoldalú",
+      leadTypeHint: "Kétoldalú: a fizető/szerződő fél más cég vagy kapcsolattartó, mint akivel a napi munka során egyeztetsz.",
       contractCompany: "Szerződő cég",
       contractContact: "Szerződő kapcsolattartó",
       referredBy: "Beajánlotta",
