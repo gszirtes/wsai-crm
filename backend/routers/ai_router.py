@@ -11,6 +11,7 @@ from utils import log_event, owner_id_for
 from capabilities import has_capability, get_default_visibility
 from membership import add_member
 from rate_limit import limiter
+from deal_rules import check_owner_required
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,14 @@ def _execute(action: str, data: dict, db: Session, user: User):
             value = float(data.get("value") or 0)
         except (TypeError, ValueError):
             value = 0
+        deal_owner_id = owner_id_for(user)
+        check_owner_required(deal_owner_id, stage)
         obj = Deal(
             title=data.get("title") or data.get("name") or "New Deal",
             value=value,
             currency=data.get("currency", "EUR"),
             stage=stage,
-            owner_id=owner_id_for(user),
+            owner_id=deal_owner_id,
             visibility=get_default_visibility(db),
         )
         db.add(obj); db.commit(); db.refresh(obj)

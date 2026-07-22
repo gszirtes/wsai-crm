@@ -11,45 +11,12 @@ from capabilities import get_default_visibility
 from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_deal_out, can_view_financials
+from deal_rules import check_owner_required
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
 STAGE_PROBABILITY = {"lead": 10, "qualified": 30, "proposal": 55,
                      "negotiation": 75, "won": 100, "lost": 0}
-# D1/BL-4: an unowned lead may sit in the shared inbox but can't advance past
-# "qualified" -- these are the stages that require owner_id to already be set.
-OWNER_REQUIRED_STAGES = {"proposal", "negotiation", "won", "lost"}
-
-
-def _check_owner_required(d: Deal, new_stage: str):
-    if new_stage in OWNER_REQUIRED_STAGES and not d.owner_id:
-        raise HTTPException(status_code=400,
-                            detail="This deal needs an owner (claim it first) before it can move past qualified")
-
-
-# 2.2: directed Activity creation updates ball-in-court automatically.
-# internal (or no direction) doesn't move the needle either way.
-DIRECTION_TO_BALL_IN_COURT = {"inbound": "us", "outbound": "them"}
-
-
-def apply_ball_in_court_for_activity(db: Session, deal_id: str, direction: str, actor):
-    """Called from activities.py on a directed Activity create. Not a
-    visibility/existence check (activities.py already resolved+can_see'd
-    the deal before calling this) -- just applies the state change."""
-    new_value = DIRECTION_TO_BALL_IN_COURT.get(direction)
-    if not new_value:
-        return
-    d = db.query(Deal).filter(Deal.id == deal_id).first()
-    if not d:
-        return
-    old_value = d.ball_in_court
-    d.last_contact_at = datetime.now(timezone.utc)
-    d.ball_in_court = new_value
-    if new_value != old_value:
-        # D4: a "pass" is counted from these direction changes in the
-        # Fazis 2.3 deal-flow analytics.
-        log_event(db, "deal", d.id, "ball_in_court_changed", actor,
-                 from_value=old_value, to_value=new_value)
 
 
 def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
@@ -129,6 +96,7 @@ def create_deal(payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
     data = payload.model_dump(exclude={"unassigned"})
     owner_id = None if payload.unassigned else owner_id_for(user)
+    check_owner_required(owner_id, data["stage"])
     d = Deal(**data, owner_id=owner_id, visibility=get_default_visibility(db))
     db.add(d)
     db.flush()
@@ -149,7 +117,7 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
     if payload.stage != old_stage:
-        _check_owner_required(d, payload.stage)
+        check_owner_required(d.owner_id, payload.stage)
     for k, v in payload.model_dump(exclude={"unassigned"}).items():
         setattr(d, k, v)
     if d.stage != old_stage:
@@ -168,7 +136,7 @@ def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Deal not found")
     old_stage = d.stage
     if payload.stage != old_stage:
-        _check_owner_required(d, payload.stage)
+        check_owner_required(d.owner_id, payload.stage)
     d.stage = payload.stage
     d.probability = STAGE_PROBABILITY.get(payload.stage, d.probability)
     if d.stage != old_stage:

@@ -1,0 +1,43 @@
+from datetime import datetime, timezone
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from models import Deal
+from utils import log_event
+
+# D1/BL-4: an unowned lead may sit in the shared inbox but can't advance past
+# "qualified" -- these are the stages that require owner_id to already be set.
+OWNER_REQUIRED_STAGES = {"proposal", "negotiation", "won", "lost"}
+
+
+def check_owner_required(owner_id: str, new_stage: str):
+    """Raises 400 if `new_stage` requires an owner (D1/BL-4) and none is set.
+    Must be enforced on every path that can set a Deal's stage -- create
+    included, not just the update endpoints."""
+    if new_stage in OWNER_REQUIRED_STAGES and not owner_id:
+        raise HTTPException(status_code=400,
+                            detail="This deal needs an owner (claim it first) before it can move past qualified")
+
+
+# 2.2: directed Activity creation updates ball-in-court automatically.
+# internal (or no direction) doesn't move the needle either way.
+DIRECTION_TO_BALL_IN_COURT = {"inbound": "us", "outbound": "them"}
+
+
+def apply_ball_in_court_for_activity(db: Session, deal_id: str, direction: str, actor):
+    """Called from activities.py on a directed Activity create. Not a
+    visibility/existence check (activities.py already resolved+can_see'd
+    the deal before calling this) -- just applies the state change."""
+    new_value = DIRECTION_TO_BALL_IN_COURT.get(direction)
+    if not new_value:
+        return
+    d = db.query(Deal).filter(Deal.id == deal_id).first()
+    if not d:
+        return
+    old_value = d.ball_in_court
+    d.last_contact_at = datetime.now(timezone.utc)
+    d.ball_in_court = new_value
+    if new_value != old_value:
+        # D4: a "pass" is counted from these direction changes in the
+        # Fazis 2.3 deal-flow analytics.
+        log_event(db, "deal", d.id, "ball_in_court_changed", actor,
+                 from_value=old_value, to_value=new_value)

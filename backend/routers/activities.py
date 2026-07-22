@@ -6,7 +6,7 @@ from schemas import ActivityCreate, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event, owner_id_for
 from visibility import can_see
-from routers.deals import apply_ball_in_court_for_activity
+from deal_rules import apply_ball_in_court_for_activity
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
