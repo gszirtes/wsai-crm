@@ -92,6 +92,7 @@ def delete_company(company_id: str, db: Session = Depends(get_db),
     # Null out child references before deleting
     db.query(Contact).filter(Contact.company_id == company_id).update({Contact.company_id: None})
     db.query(Deal).filter(Deal.company_id == company_id).update({Deal.company_id: None})
+    db.query(Deal).filter(Deal.contract_company_id == company_id).update({Deal.contract_company_id: None})
     db.query(Project).filter(Project.company_id == company_id).update({Project.company_id: None})
     db.query(Activity).filter(Activity.company_id == company_id).update({Activity.company_id: None})
     log_event(db, "company", c.id, "deleted", user)

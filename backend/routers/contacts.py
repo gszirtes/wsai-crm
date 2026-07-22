@@ -110,6 +110,8 @@ def delete_contact(contact_id: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Contact not found")
     # Null out child references before deleting
     db.query(Deal).filter(Deal.contact_id == contact_id).update({Deal.contact_id: None})
+    db.query(Deal).filter(Deal.contract_contact_id == contact_id).update({Deal.contract_contact_id: None})
+    db.query(Deal).filter(Deal.referred_by_contact_id == contact_id).update({Deal.referred_by_contact_id: None})
     db.query(Activity).filter(Activity.contact_id == contact_id).update({Activity.contact_id: None})
     log_event(db, "contact", c.id, "deleted", user)
     db.delete(c)
