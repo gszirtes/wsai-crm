@@ -66,6 +66,26 @@ class TestFollowUpTaskCreation:
         finally:
             admin_client.delete(f"{base_url}/api/projects/{p['id']}")
 
+    def test_follow_up_task_logs_activity_created_and_project_marker_as_service(self, admin_client, base_url):
+        p = self._completed_project(admin_client, base_url, "TEST_p5 followup event log", follow_up_days=0)
+        try:
+            _run_housekeeping(admin_client, base_url)
+            activity_id = admin_client.get(f"{base_url}/api/projects/{p['id']}/detail").json()["pending_follow_up"]["id"]
+
+            activity_events = admin_client.get(f"{base_url}/api/event-logs",
+                                               params={"entity_type": "activity", "entity_id": activity_id}).json()
+            created = [e for e in activity_events if e["event_type"] == "created"]
+            assert len(created) == 1
+            assert created[0]["actor_type"] == "service"
+
+            project_events = admin_client.get(f"{base_url}/api/event-logs",
+                                              params={"entity_type": "project", "entity_id": p["id"]}).json()
+            marker = [e for e in project_events if e["event_type"] == "follow_up_task_created"]
+            assert len(marker) == 1
+            assert marker[0]["actor_type"] == "service"
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{p['id']}")
+
     def test_follow_up_task_creation_is_idempotent(self, admin_client, base_url):
         p = self._completed_project(admin_client, base_url, "TEST_p5 followup idempotent", follow_up_days=0)
         try:
@@ -109,6 +129,14 @@ class TestStaleFlag:
             activity_id = ar.json()["id"]
             _run_housekeeping(admin_client, base_url)
             assert admin_client.get(f"{base_url}/api/deals/{d['id']}").json()["is_stale"] is True
+
+            events = admin_client.get(f"{base_url}/api/event-logs",
+                                      params={"entity_type": "deal", "entity_id": d["id"]}).json()
+            stale_events = [e for e in events if e["event_type"] == "stale_flag_changed"]
+            assert len(stale_events) == 1
+            assert stale_events[0]["actor_type"] == "service"
+            assert stale_events[0]["from_value"] == "False"
+            assert stale_events[0]["to_value"] == "True"
         finally:
             admin_client.put(f"{base_url}/api/settings/thresholds", json=original)
             if activity_id:
@@ -173,8 +201,78 @@ class TestFollowUpCompletion:
             assert r.json()["referral_deal_id"] is None
             detail = admin_client.get(f"{base_url}/api/projects/{project_id}/detail").json()
             assert detail["pending_follow_up"] is None
+
+            events = admin_client.get(f"{base_url}/api/event-logs",
+                                      params={"entity_type": "project", "entity_id": project_id}).json()
+            satisfaction_events = [e for e in events if e["event_type"] == "satisfaction_recorded"]
+            assert len(satisfaction_events) == 1
+            assert satisfaction_events[0]["actor_type"] == "user"
+            assert satisfaction_events[0]["to_value"] == "4"
         finally:
             admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_satisfaction_only_creates_no_stray_deal(self, admin_client, base_url):
+        before = len(admin_client.get(f"{base_url}/api/deals", params={"limit": 500}).json())
+        project_id = self._project_with_pending_follow_up(admin_client, base_url, "TEST_p5 no stray deal")
+        try:
+            r = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up", json={"satisfaction_score": 3})
+            assert r.status_code == 200, r.text
+            after = len(admin_client.get(f"{base_url}/api/deals", params={"limit": 500}).json())
+            assert after == before
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_satisfaction_score_out_of_range_rejected(self, admin_client, base_url):
+        project_id = self._project_with_pending_follow_up(admin_client, base_url, "TEST_p5 bad satisfaction")
+        try:
+            for bad in (0, 6):
+                r = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up",
+                                      json={"satisfaction_score": bad})
+                assert r.status_code == 422, r.text
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_completing_same_follow_up_twice_second_call_400(self, admin_client, base_url):
+        project_id = self._project_with_pending_follow_up(admin_client, base_url, "TEST_p5 double complete")
+        try:
+            first = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up",
+                                      json={"satisfaction_score": 4})
+            assert first.status_code == 200, first.text
+            second = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up",
+                                       json={"satisfaction_score": 5})
+            assert second.status_code == 400, second.text
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_referral_with_nonexistent_contact_404(self, admin_client, base_url):
+        project_id = self._project_with_pending_follow_up(admin_client, base_url, "TEST_p5 bad contact")
+        try:
+            r = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up",
+                                  json={"referred_contact_id": "not-a-real-contact-id"})
+            assert r.status_code == 404, r.text
+        finally:
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+
+    def test_referral_deal_auto_tags_creator_as_member(self, admin_client, user_client, base_url):
+        """5.22b audit fix: the referral deal must not lock out its own
+        creator if default_visibility is ever set to private (same bug
+        class CLAUDE.md documents for the AI-creation path)."""
+        contact = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p5 member referrer"}).json()
+        project_id = self._project_with_pending_follow_up(admin_client, base_url, "TEST_p5 member referral")
+        deal_id = None
+        try:
+            r = admin_client.post(f"{base_url}/api/projects/{project_id}/follow-up",
+                                  json={"referred_contact_id": contact["id"]})
+            assert r.status_code == 200, r.text
+            deal_id = r.json()["referral_deal_id"]
+            members = admin_client.get(f"{base_url}/api/deals/{deal_id}/members").json()
+            admin_id = admin_client.get(f"{base_url}/api/auth/me").json()["id"]
+            assert any(m["user_id"] == admin_id for m in members)
+        finally:
+            if deal_id:
+                admin_client.delete(f"{base_url}/api/deals/{deal_id}")
+            admin_client.delete(f"{base_url}/api/projects/{project_id}")
+            admin_client.delete(f"{base_url}/api/contacts/{contact['id']}")
 
     def test_complete_follow_up_with_referral_creates_deal_and_tags_contact(self, admin_client, base_url):
         contact = admin_client.post(f"{base_url}/api/contacts", json={"first_name": "TEST_p5 referrer"}).json()
