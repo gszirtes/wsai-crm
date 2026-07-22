@@ -77,6 +77,8 @@ export default function Deals() {
   const toggleUnassigned = (e) => setForm({ ...form, unassigned: e.target.checked });
 
   const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
+  const companyOptions = companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
+  const contactOptions = contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>);
 
   const onDragEnd = async (result) => {
     if (!result.destination || !writable) return;
@@ -221,13 +223,13 @@ export default function Deals() {
           <Field label={t("deal.company")}>
             <Select value={form.company_id || ""} onChange={set("company_id")}>
               <option value="">—</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {companyOptions}
             </Select>
           </Field>
           <Field label={t("deal.contact")}>
             <Select value={form.contact_id || ""} onChange={set("contact_id")}>
               <option value="">—</option>
-              {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+              {contactOptions}
             </Select>
           </Field>
         </div>
@@ -244,18 +246,19 @@ export default function Deals() {
             </Select>
           </Field>
         </div>
+        <p className="text-xs text-muted -mt-2">{t("deal.leadTypeHint")}</p>
         {form.lead_type === "double" && (
           <div className="grid grid-cols-2 gap-3 border border-border rounded-sm p-3" data-testid="contract-party-block">
             <Field label={t("deal.contractCompany")}>
               <Select data-testid="deal-contract-company" value={form.contract_company_id || ""} onChange={set("contract_company_id")}>
                 <option value="">—</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {companyOptions}
               </Select>
             </Field>
             <Field label={t("deal.contractContact")}>
               <Select data-testid="deal-contract-contact" value={form.contract_contact_id || ""} onChange={set("contract_contact_id")}>
                 <option value="">—</option>
-                {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+                {contactOptions}
               </Select>
             </Field>
           </div>
@@ -263,7 +266,7 @@ export default function Deals() {
         <Field label={t("deal.referredBy")}>
           <Select data-testid="deal-referred-by" value={form.referred_by_contact_id || ""} onChange={set("referred_by_contact_id")}>
             <option value="">—</option>
-            {contacts.map((c) => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+            {contactOptions}
           </Select>
         </Field>
         {!editing && (

@@ -31,11 +31,7 @@ export default function ContactDetail() {
       ? tags.filter((tg) => tg !== REFERRER_TAG)
       : [...tags, REFERRER_TAG];
     try {
-      await api.put(`/contacts/${id}`, {
-        first_name: c.first_name, last_name: c.last_name, email: c.email, phone: c.phone,
-        title: c.title, status: c.status, notes: c.notes, company_id: c.company_id,
-        tags: nextTags,
-      });
+      await api.put(`/contacts/${id}`, { ...c, tags: nextTags });
       load();
     } catch (e) {
       console.error("Contact update failed:", e);
@@ -82,35 +78,19 @@ export default function ContactDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="border border-border rounded-sm p-5 space-y-2">
-          <h3 className="font-display font-bold mb-2">{t("detail.overview")}</h3>
-          {c.email && <div className="flex items-center gap-2 text-sm"><Mail size={14} className="text-muted" />{c.email}</div>}
-          {c.phone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-muted" />{c.phone}</div>}
-          {c.company_name && <div className="flex items-center gap-2 text-sm"><Building2 size={14} className="text-muted" />{c.company_name}</div>}
-          {c.notes && <p className="text-sm text-muted pt-2 border-t border-border">{c.notes}</p>}
-          {writable && (
-            <label className="flex items-center gap-2 text-sm pt-2 border-t border-border">
-              <input type="checkbox" data-testid="regular-referrer-toggle"
-                checked={(c.tags || []).includes(REFERRER_TAG)} onChange={toggleReferrer} />
-              {t("contact.regularReferrer")}
-            </label>
-          )}
-        </div>
-
-        <div className="border border-border rounded-sm p-5" data-testid="referrals-panel">
-          <h3 className="font-display font-bold mb-3 flex items-center gap-2"><Users size={16} className="text-primary" />{t("contact.referrals")}</h3>
-          <div className="flex gap-6">
-            <div>
-              <div className="font-display text-2xl font-bold">{data.referrals.count}</div>
-              <div className="text-xs text-muted">{t("contact.referralsCount")}</div>
-            </div>
-            <div>
-              <div className="font-display text-2xl font-bold">{data.referrals.won_count}</div>
-              <div className="text-xs text-muted">{t("contact.referralsWon")}</div>
-            </div>
-          </div>
-        </div>
+      <div className="border border-border rounded-sm p-5 space-y-2">
+        <h3 className="font-display font-bold mb-2">{t("detail.overview")}</h3>
+        {c.email && <div className="flex items-center gap-2 text-sm"><Mail size={14} className="text-muted" />{c.email}</div>}
+        {c.phone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-muted" />{c.phone}</div>}
+        {c.company_name && <div className="flex items-center gap-2 text-sm"><Building2 size={14} className="text-muted" />{c.company_name}</div>}
+        {c.notes && <p className="text-sm text-muted pt-2 border-t border-border">{c.notes}</p>}
+        {writable && (
+          <label className="flex items-center gap-2 text-sm pt-2 border-t border-border">
+            <input type="checkbox" data-testid="regular-referrer-toggle"
+              checked={(c.tags || []).includes(REFERRER_TAG)} onChange={toggleReferrer} />
+            {t("contact.regularReferrer")}
+          </label>
+        )}
       </div>
 
       <div className="border border-border rounded-sm p-5">
@@ -125,6 +105,20 @@ export default function ContactDetail() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="border border-border rounded-sm p-5" data-testid="referrals-panel">
+        <h3 className="font-display font-bold mb-3 flex items-center gap-2"><Users size={16} className="text-primary" />{t("contact.referrals")}</h3>
+        <div className="flex gap-6">
+          <div>
+            <div className="font-display text-2xl font-bold">{data.referrals.count}</div>
+            <div className="text-xs text-muted">{t("contact.referralsCount")}</div>
+          </div>
+          <div>
+            <div className="font-display text-2xl font-bold">{data.referrals.won_count}</div>
+            <div className="text-xs text-muted">{t("contact.referralsWon")}</div>
+          </div>
+        </div>
       </div>
 
       <div className="border border-border rounded-sm p-5">
