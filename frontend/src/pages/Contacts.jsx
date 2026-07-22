@@ -7,6 +7,7 @@ import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, EmptyState, Spinner, Textarea, Toast } from "../components/common";
 
 const STATUSES = ["lead", "prospect", "customer", "inactive"];
+const REFERRER_TAG = "referrer";
 const empty = { first_name: "", last_name: "", email: "", phone: "", title: "", status: "lead", company_id: "", notes: "" };
 
 export default function Contacts() {
@@ -19,6 +20,7 @@ export default function Contacts() {
   const [companies, setCompanies] = useState([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [referrersOnly, setReferrersOnly] = useState(false);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
@@ -50,6 +52,7 @@ export default function Contacts() {
   };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const visibleItems = (items || []).filter((c) => !referrersOnly || (c.tags || []).includes(REFERRER_TAG));
 
   const exportCsv = () => {
     const url = `${process.env.REACT_APP_BACKEND_URL}/api/export/contacts.csv`;
@@ -94,13 +97,17 @@ export default function Contacts() {
           <option value="">{t("common.all")}</option>
           {STATUSES.map((s) => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}
         </Select>
+        <Button variant={referrersOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs whitespace-nowrap"
+          onClick={() => setReferrersOnly(!referrersOnly)} data-testid="referrers-only-filter">
+          {t("contact.referrersOnly")}
+        </Button>
       </div>
 
-      {!items ? <Spinner /> : items.length === 0 ? (
+      {!items ? <Spinner /> : visibleItems.length === 0 ? (
         <EmptyState title={t("common.noResults")} action={writable && <Button onClick={openNew}><Plus size={16} />{t("contact.newContact")}</Button>} />
       ) : (
         <div className="border border-border rounded-sm overflow-hidden stagger">
-          {items.map((c) => (
+          {visibleItems.map((c) => (
             <div key={c.id} data-testid={`contact-row-${c.id}`} onClick={() => navigate(`/contacts/${c.id}`)} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors cursor-pointer">
               <div className="w-9 h-9 rounded-sm bg-primary/15 text-primary flex items-center justify-center text-sm font-bold shrink-0">
                 {c.first_name?.[0]?.toUpperCase()}
@@ -116,6 +123,7 @@ export default function Contacts() {
                 </div>
               </div>
               <Badge value={c.status} label={t(`statuses.${c.status}`)} />
+              {(c.tags || []).includes(REFERRER_TAG) && <Badge value="won" label={t("contact.regularReferrer")} />}
               {writable && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-sm hover:bg-border/60 text-muted transition-colors"><Pencil size={14} /></button>
