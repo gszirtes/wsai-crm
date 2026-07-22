@@ -11,6 +11,8 @@ ActivityDirection = Literal["inbound", "outbound", "internal"]
 ProjectPriority = Literal["low", "medium", "high"]
 UserRole = Literal["admin", "manager", "user", "guest"]
 Visibility = Literal["public", "private"]
+DealSource = Literal["inbound", "outreach", "referral", "other"]
+BallInCourt = Literal["us", "them", "none"]
 
 
 # ---------- Auth ----------
@@ -113,16 +115,26 @@ class DealBase(BaseModel):
     notes: Optional[str] = None
     company_id: Optional[str] = None
     contact_id: Optional[str] = None
+    source: Optional[DealSource] = None
 
 
 class DealCreate(DealBase):
-    pass
+    # Create-time-only flag, not a Deal column: False (default) means the
+    # creator becomes owner (existing behavior); True means owner_id stays
+    # None (shared/unassigned inbox). owner_id itself is still never
+    # accepted as client input -- this is the one lever a client has over
+    # it. update_deal (PUT) reuses this schema too but explicitly excludes
+    # this field from the update, since it only means something at creation.
+    unassigned: bool = False
 
 
 class DealOut(DealBase):
     id: str
     owner_id: Optional[str] = None
     visibility: Visibility = "public"
+    claimed_at: Optional[datetime] = None
+    last_contact_at: Optional[datetime] = None
+    ball_in_court: Optional[BallInCourt] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -131,6 +143,14 @@ class DealOut(DealBase):
 
 class StageUpdate(BaseModel):
     stage: DealStage
+
+
+class BallInCourtUpdate(BaseModel):
+    ball_in_court: BallInCourt
+
+
+class OwnerUpdate(BaseModel):
+    owner_id: str
 
 
 class VisibilityUpdate(BaseModel):
@@ -257,6 +277,13 @@ class CapabilityMatrix(BaseModel):
     manager: RoleCapabilities
     user: RoleCapabilities
     guest: RoleCapabilities
+
+
+# ---------- SLA thresholds (D7, Phase 2) ----------
+class ThresholdSettings(BaseModel):
+    unassigned_days: int = Field(ge=0)
+    awaiting_response_days: int = Field(ge=0)
+    stale_days: int = Field(ge=0)
 
 
 class LocaleUpdate(BaseModel):

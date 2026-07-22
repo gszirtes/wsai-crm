@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Building2, User, Activity as ActIcon, Plus } from "lucide-react";
-import api from "../api";
+import { ArrowLeft, Building2, User, Activity as ActIcon, Plus, History } from "lucide-react";
+import api, { formatApiError } from "../api";
 import { useAuth, can } from "../auth";
 import { Badge, Spinner, Button, Modal, Field, Input, Textarea, Select } from "../components/common";
 import VisibilityMembers from "../components/VisibilityMembers";
 
 const TYPES = ["call", "email", "meeting", "task", "note"];
+const BALL_IN_COURT_OPTIONS = ["us", "them", "none"];
 const emptyActivity = { type: "call", direction: "", subject: "", description: "" };
 
 export default function DealDetail() {
@@ -17,31 +18,72 @@ export default function DealDetail() {
   const { user } = useAuth();
   const writable = can.write(user);
   const [data, setData] = useState(null);
+  const [timeline, setTimeline] = useState(null);
   const [modal, setModal] = useState(false);
   const [activity, setActivity] = useState(emptyActivity);
+  const [error, setError] = useState("");
 
   const load = useCallback(() => {
     api.get(`/deals/${id}/detail`).then((r) => setData(r.data)).catch(() => navigate("/deals"));
+    api.get(`/deals/${id}/timeline`).then((r) => setTimeline(r.data)).catch(() => {});
   }, [id, navigate]);
   useEffect(() => { load(); }, [load]);
 
   const logActivity = async () => {
-    await api.post("/activities", {
-      type: activity.type,
-      direction: activity.direction || null,
-      subject: activity.subject,
-      description: activity.description,
-      deal_id: id,
-    });
-    setModal(false);
-    setActivity(emptyActivity);
-    load();
+    try {
+      await api.post("/activities", {
+        type: activity.type,
+        direction: activity.direction || null,
+        subject: activity.subject,
+        description: activity.description,
+        deal_id: id,
+      });
+      setModal(false);
+      setActivity(emptyActivity);
+      load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
   const set = (k) => (e) => setActivity({ ...activity, [k]: e.target.value });
+
+  const claimDeal = async () => {
+    try {
+      await api.patch(`/deals/${id}/claim`);
+      load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const setBallInCourt = async (value) => {
+    try {
+      await api.patch(`/deals/${id}/ball-in-court`, { ball_in_court: value });
+      load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
 
   if (!data) return <Spinner />;
   const d = data.deal;
   const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
+
+  const passCount = (timeline || []).filter((e) => e.event_type === "ball_in_court_changed").length;
+  const throughputDays = timeline && timeline.length
+    ? Math.max(0, Math.round((Date.now() - new Date(timeline[0].created_at).getTime()) / 86400000))
+    : null;
+
+  const timelineLabel = (e) => {
+    const base = t(`timeline.${e.event_type}`, e.event_type);
+    if (e.event_type === "stage_changed") return `${base}: ${t(`statuses.${e.from_value}`)} → ${t(`statuses.${e.to_value}`)}`;
+    if (e.event_type === "ball_in_court_changed") {
+      return `${base}: ${t(`deal.ballInCourt_${e.from_value || "none"}`)} → ${t(`deal.ballInCourt_${e.to_value}`)}`;
+    }
+    if (e.event_type === "visibility_changed") return `${base}: ${e.from_value} → ${e.to_value}`;
+    if (e.event_type === "activity_logged" && e.activity_subject) return `${base}: ${e.activity_subject}`;
+    return base;
+  };
 
   return (
     <div className="space-y-6">
@@ -49,12 +91,18 @@ export default function DealDetail() {
         <ArrowLeft size={16} /> {t("detail.back")}
       </button>
 
+      {error && <p className="text-sm text-danger">{error}</p>}
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{d.title}</h1>
           <div className="font-display text-3xl font-bold mt-2">{eur(d.value)}</div>
         </div>
         <div className="flex items-center gap-2">
+          {d.ball_in_court && d.ball_in_court !== "none" && (
+            <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
+              label={`${t("deal.ballInCourt")}: ${t(`deal.ballInCourt_${d.ball_in_court}`)}`} />
+          )}
           <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
           <span className="text-sm text-muted">{d.probability}%</span>
         </div>
@@ -62,6 +110,24 @@ export default function DealDetail() {
 
       <div className="border border-border rounded-sm p-5 space-y-2">
         <h3 className="font-display font-bold mb-2">{t("detail.overview")}</h3>
+        <div className="flex items-center gap-2 text-sm">
+          <User size={14} className="text-muted" />
+          {data.owner_name || t("deal.unassigned")}
+          {writable && !data.owner_name && (
+            <Button variant="subtle" className="py-1 px-2 text-xs" onClick={claimDeal} data-testid="claim-deal-btn">
+              {t("deal.claim")}
+            </Button>
+          )}
+        </div>
+        {writable && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted">{t("deal.ballInCourt")}:</span>
+            <Select value={d.ball_in_court || "none"} onChange={(e) => setBallInCourt(e.target.value)}
+              data-testid="ball-in-court-select" className="w-auto">
+              {BALL_IN_COURT_OPTIONS.map((v) => <option key={v} value={v}>{t(`deal.ballInCourt_${v}`)}</option>)}
+            </Select>
+          </div>
+        )}
         {data.company_name && <div className="flex items-center gap-2 text-sm"><Building2 size={14} className="text-muted" />{data.company_name}</div>}
         {data.contact_name && <div className="flex items-center gap-2 text-sm"><User size={14} className="text-muted" />{data.contact_name}</div>}
         {d.expected_close && <div className="text-sm text-muted">{t("deal.expectedClose")}: {new Date(d.expected_close).toLocaleDateString()}</div>}
@@ -85,6 +151,31 @@ export default function DealDetail() {
                 <div>
                   <div className="text-sm">{a.subject}</div>
                   <div className="text-xs text-muted">{t(`statuses.${a.type}`)}{a.direction ? ` · ${t(`activity.direction.${a.direction}`)}` : ""}{a.completed ? " · ✓" : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border border-border rounded-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-display font-bold flex items-center gap-2"><History size={16} className="text-glow" />{t("timeline.title")}</h3>
+          {timeline && timeline.length > 0 && (
+            <div className="flex items-center gap-3 text-xs text-muted">
+              <span>{throughputDays}d</span>
+              <span>{passCount} {t("deal.ballInCourt").toLowerCase()}</span>
+            </div>
+          )}
+        </div>
+        {!timeline || timeline.length === 0 ? <p className="text-sm text-muted">{t("timeline.noEvents")}</p> : (
+          <div className="space-y-3" data-testid="deal-timeline">
+            {timeline.map((e) => (
+              <div key={e.id} className="flex items-start gap-3" data-testid={`timeline-event-${e.event_type}`}>
+                <span className="mt-1.5 w-2 h-2 rounded-full bg-glow shrink-0" />
+                <div>
+                  <div className="text-sm">{timelineLabel(e)}</div>
+                  <div className="text-xs text-muted">{new Date(e.created_at).toLocaleString()}</div>
                 </div>
               </div>
             ))}

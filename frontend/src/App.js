@@ -15,6 +15,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Activities from "./pages/Activities";
 import Calendar from "./pages/Calendar";
 import Utilization from "./pages/Utilization";
+import DealFlow from "./pages/DealFlow";
 import UsersPage from "./pages/Users";
 import SettingsPage from "./pages/Settings";
 import { Spinner } from "./components/common";
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/activities" element={<Protected><Activities /></Protected>} />
       <Route path="/calendar" element={<Protected><Calendar /></Protected>} />
       <Route path="/utilization" element={<Protected roles={["admin", "manager"]}><Utilization /></Protected>} />
+      <Route path="/deal-flow" element={<Protected roles={["admin", "manager"]}><DealFlow /></Protected>} />
       <Route path="/users" element={<Protected adminOnly><UsersPage /></Protected>} />
       <Route path="/settings" element={<Protected adminOnly><SettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

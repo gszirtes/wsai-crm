@@ -8,7 +8,8 @@ import { useAuth, can } from "../auth";
 import { Button, Input, Select, Field, Modal, Badge, Spinner, Textarea } from "../components/common";
 
 const STAGES = ["lead", "qualified", "proposal", "negotiation", "won", "lost"];
-const empty = { title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "" };
+const SOURCES = ["inbound", "outreach", "referral", "other"];
+const empty = { title: "", value: 0, currency: "EUR", stage: "lead", company_id: "", contact_id: "", notes: "", source: "", unassigned: false };
 
 export default function Deals() {
   const { t } = useTranslation();
@@ -23,6 +24,8 @@ export default function Deals() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
+  const [ourTurnOnly, setOurTurnOnly] = useState(false);
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
 
   const load = useCallback(() => {
     api.get("/deals").then((r) => setItems(r.data))
@@ -37,16 +40,25 @@ export default function Deals() {
   const openNew = () => { setForm(empty); setEditing(null); setModal(true); };
   const openEdit = (d) => { setForm({ ...empty, ...d, company_id: d.company_id || "", contact_id: d.contact_id || "" }); setEditing(d.id); setModal(true); };
   const save = async () => {
-    const payload = { ...form, value: parseFloat(form.value) || 0, company_id: form.company_id || null, contact_id: form.contact_id || null };
-    if (editing) await api.put(`/deals/${editing}`, payload);
-    else await api.post("/deals", payload);
-    setModal(false); load();
+    const payload = {
+      ...form, value: parseFloat(form.value) || 0,
+      company_id: form.company_id || null, contact_id: form.contact_id || null,
+      source: form.source || null,
+    };
+    try {
+      if (editing) await api.put(`/deals/${editing}`, payload);
+      else await api.post("/deals", payload);
+      setModal(false); load();
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
   };
   const del = async (id) => {
     if (!window.confirm(t("common.confirmDelete"))) return;
     await api.delete(`/deals/${id}`); load();
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const toggleUnassigned = (e) => setForm({ ...form, unassigned: e.target.checked });
 
   const eur = (n) => (n == null ? "—" : "€" + new Intl.NumberFormat().format(n));
 
@@ -69,7 +81,10 @@ export default function Deals() {
     }
   };
 
-  const byStage = (s) => (items || []).filter((d) => d.stage === s);
+  const visibleItems = (items || [])
+    .filter((d) => !ourTurnOnly || d.ball_in_court === "us")
+    .filter((d) => !unassignedOnly || !d.owner_id);
+  const byStage = (s) => visibleItems.filter((d) => d.stage === s);
   const stageTotal = (s) => byStage(s).reduce((a, d) => a + (d.value || 0), 0);
 
   return (
@@ -81,6 +96,14 @@ export default function Deals() {
             <button onClick={() => setView("board")} data-testid="deals-view-board" className={`p-2 transition-colors ${view === "board" ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}><LayoutGrid size={16} /></button>
             <button onClick={() => setView("list")} data-testid="deals-view-list" className={`p-2 transition-colors ${view === "list" ? "bg-primary text-white" : "text-muted hover:bg-surface"}`}><List size={16} /></button>
           </div>
+          <Button variant={ourTurnOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setOurTurnOnly(!ourTurnOnly)} data-testid="ball-in-court-filter">
+            {t("deal.ballInCourtFilter")}
+          </Button>
+          <Button variant={unassignedOnly ? "primary" : "subtle"} className="py-1.5 px-3 text-xs"
+            onClick={() => setUnassignedOnly(!unassignedOnly)} data-testid="unassigned-filter">
+            {t("deal.unassigned")}
+          </Button>
           {writable && <Button onClick={openNew} data-testid="add-deal-btn"><Plus size={16} /><span className="hidden sm:inline">{t("deal.newDeal")}</span></Button>}
         </div>
       </div>
@@ -119,7 +142,13 @@ export default function Deals() {
                                 )}
                               </div>
                               <div className="font-display font-bold text-lg mt-1">{eur(d.value)}</div>
-                              <div className="text-xs text-muted mt-1">{d.probability}%</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs text-muted">{d.probability}%</span>
+                                {d.ball_in_court && d.ball_in_court !== "none" && (
+                                  <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
+                                    label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
+                                )}
+                              </div>
                             </div>
                           )}
                         </Draggable>
@@ -134,13 +163,17 @@ export default function Deals() {
         </DragDropContext>
       ) : (
         <div className="border border-border rounded-sm overflow-hidden stagger">
-          {items.map((d) => (
+          {visibleItems.map((d) => (
             <div key={d.id} data-testid={`deal-row-${d.id}`} onClick={() => navigate(`/deals/${d.id}`)} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-surface/60 transition-colors cursor-pointer">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">{d.title}</div>
                 <div className="text-xs text-muted">{d.probability}%</div>
               </div>
               <span className="font-display font-bold">{eur(d.value)}</span>
+              {d.ball_in_court && d.ball_in_court !== "none" && (
+                <Badge value={d.ball_in_court === "us" ? "lost" : "won"}
+                  label={t(`deal.ballInCourt_${d.ball_in_court}`)} />
+              )}
               <Badge value={d.stage} label={t(`statuses.${d.stage}`)} />
               {writable && (
                 <div className="flex gap-1 shrink-0">
@@ -181,6 +214,19 @@ export default function Deals() {
             </Select>
           </Field>
         </div>
+        <Field label={t("deal.source")}>
+          <Select data-testid="deal-source" value={form.source || ""} onChange={set("source")}>
+            <option value="">—</option>
+            {SOURCES.map((s) => <option key={s} value={s}>{t(`deal.source_${s}`)}</option>)}
+          </Select>
+        </Field>
+        {!editing && (
+          <label className="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" data-testid="deal-unassigned" checked={form.unassigned}
+              onChange={toggleUnassigned} />
+            {t("deal.unassigned")}
+          </label>
+        )}
         <Field label={t("deal.notes")}><Textarea rows={3} value={form.notes || ""} onChange={set("notes")} /></Field>
       </Modal>
     </div>

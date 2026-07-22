@@ -6,6 +6,7 @@ from schemas import ActivityCreate, ActivityOut
 from auth import get_current_user, require_write
 from utils import log_event, owner_id_for
 from visibility import can_see
+from deal_rules import apply_ball_in_court_for_activity
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
@@ -56,7 +57,7 @@ def list_activities(completed: str = "", contact_id: str = "", deal_id: str = ""
 
 
 @router.post("", response_model=ActivityOut,
-            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project. 404 if deal_id/project_id points at a private one this user isn't admin/manager/owner/member of.")
+            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project. If linked to a deal_id and direction is inbound/outbound, updates that deal's ball_in_court and last_contact_at (2.2). 404 if deal_id/project_id points at a private one this user isn't admin/manager/owner/member of.")
 def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     _check_deal_project_visible(db, payload.deal_id, payload.project_id, user)
@@ -64,6 +65,8 @@ def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
     db.add(a)
     db.flush()
     _log_activity_created(db, a, user)
+    if a.deal_id and a.direction:
+        apply_ball_in_court_for_activity(db, a.deal_id, a.direction, user)
     db.commit()
     db.refresh(a)
     return a
