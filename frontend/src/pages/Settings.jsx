@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Calendar, Check, X, ShieldCheck, Timer } from "lucide-react";
+import { Sparkles, Calendar, Check, X, ShieldCheck, Timer, KeyRound, Plus, Trash2, Copy } from "lucide-react";
 import api, { formatApiError } from "../api";
-import { Button, Input, Select, Field, Badge } from "../components/common";
+import { Button, Input, Select, Field, Badge, Modal } from "../components/common";
 
 const MODELS = [
   "deepseek/deepseek-chat-v3-0324:free",
@@ -17,6 +17,8 @@ const CAPABILITIES = [
 ];
 const EDITABLE_ROLES = ["user", "guest"];
 const FIXED_ROLES = ["admin", "manager"];
+const SA_ROLES = ["admin", "manager", "user", "guest"];
+const emptyServiceAccount = { name: "", role: "user" };
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -30,6 +32,16 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [housekeeping, setHousekeeping] = useState(null);
   const [housekeepingRunning, setHousekeepingRunning] = useState(false);
+  const [serviceAccounts, setServiceAccounts] = useState(null);
+  const [saModal, setSaModal] = useState(false);
+  const [saForm, setSaForm] = useState(emptyServiceAccount);
+  const [newApiKey, setNewApiKey] = useState(null);
+  const [keyCopied, setKeyCopied] = useState(false);
+
+  const loadServiceAccounts = useCallback(() => {
+    api.get("/service-accounts").then((r) => setServiceAccounts(r.data))
+      .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
+  }, []);
 
   useEffect(() => {
     api.get("/settings").then((r) => {
@@ -39,7 +51,8 @@ export default function SettingsPage() {
     }).catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
     api.get("/settings/capabilities").then((r) => setCapabilities(r.data))
       .catch((e) => setError(formatApiError(e.response?.data?.detail) || e.message));
-  }, []);
+    loadServiceAccounts();
+  }, [loadServiceAccounts]);
 
   const save = async () => {
     setError("");
@@ -88,6 +101,54 @@ export default function SettingsPage() {
       setError(formatApiError(e.response?.data?.detail) || e.message);
     } finally {
       setHousekeepingRunning(false);
+    }
+  };
+
+  const openNewServiceAccount = () => { setSaForm(emptyServiceAccount); setNewApiKey(null); setKeyCopied(false); setError(""); setSaModal(true); };
+
+  const closeServiceAccountModal = () => {
+    if (newApiKey && !window.confirm(t("settings.saKeyCloseConfirm"))) return;
+    setSaModal(false);
+  };
+
+  const createServiceAccount = async () => {
+    setError("");
+    try {
+      const r = await api.post("/service-accounts", saForm);
+      setNewApiKey(r.data.api_key);
+      loadServiceAccounts();
+    } catch (e) {
+      console.error("Service account creation failed:", e);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const copyApiKey = () => {
+    navigator.clipboard.writeText(newApiKey).then(() => {
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2000);
+    });
+  };
+
+  const toggleServiceAccountActive = async (sa) => {
+    if (sa.active && !window.confirm(t("settings.saRevokeConfirm"))) return;
+    try {
+      await api.patch(`/service-accounts/${sa.id}`, { active: !sa.active });
+      loadServiceAccounts();
+    } catch (e) {
+      console.error("Service account update failed:", e);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+    }
+  };
+
+  const deleteServiceAccount = async (id) => {
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    try {
+      await api.delete(`/service-accounts/${id}`);
+      loadServiceAccounts();
+    } catch (e) {
+      console.error("Service account delete failed:", e);
+      setError(formatApiError(e.response?.data?.detail) || e.message);
     }
   };
 
@@ -240,6 +301,43 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Service accounts (Phase 6 -- MCP/agent access) */}
+      <div className="border border-border rounded-sm p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-sm bg-glow/15 text-glow flex items-center justify-center"><KeyRound size={18} /></div>
+            <div>
+              <h3 className="font-display font-bold">{t("settings.serviceAccounts")}</h3>
+              <p className="text-sm text-muted">{t("settings.serviceAccountsDesc")}</p>
+            </div>
+          </div>
+          <Button onClick={openNewServiceAccount} data-testid="add-service-account-btn"><Plus size={16} /><span className="hidden sm:inline">{t("settings.newServiceAccount")}</span></Button>
+        </div>
+        {serviceAccounts && serviceAccounts.length > 0 && (
+          <div className="mt-5 divide-y divide-border">
+            {serviceAccounts.map((sa) => (
+              <div key={sa.id} data-testid={`service-account-row-${sa.id}`} className="flex items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate">{sa.name}</div>
+                  <div className="text-xs text-muted">{t(`roles.${sa.role}`)}</div>
+                </div>
+                <Badge value={sa.active ? "won" : "lost"} label={sa.active ? t("settings.saActive") : t("settings.saRevoked")} />
+                <label className="flex items-center gap-1.5 text-xs text-muted">
+                  <input type="checkbox" data-testid={`toggle-service-account-${sa.id}`} checked={sa.active}
+                    onChange={() => toggleServiceAccountActive(sa)} />
+                  {t("settings.saActive")}
+                </label>
+                <button onClick={() => deleteServiceAccount(sa.id)} data-testid={`delete-service-account-${sa.id}`}
+                  className="p-1.5 rounded-sm hover:bg-danger/15 text-muted hover:text-danger transition-colors"><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {serviceAccounts && serviceAccounts.length === 0 && (
+          <p className="text-sm text-muted mt-4">{t("settings.noServiceAccounts")}</p>
+        )}
+      </div>
+
       {/* Google Workspace */}
       <div className="border border-border rounded-sm p-6">
         <div className="flex items-start justify-between">
@@ -256,6 +354,37 @@ export default function SettingsPage() {
           <X size={14} className="text-muted" /> Requires Google Cloud OAuth credentials (Client ID & Secret).
         </div>
       </div>
+
+      <Modal open={saModal} onClose={closeServiceAccountModal} title={t("settings.newServiceAccount")}
+        footer={<>
+          <Button variant="ghost" onClick={closeServiceAccountModal}>{newApiKey ? t("common.close") : t("common.cancel")}</Button>
+          {!newApiKey && <Button onClick={createServiceAccount} data-testid="create-service-account-btn">{t("common.create")}</Button>}
+        </>}>
+        {newApiKey ? (
+          <div className="space-y-3">
+            <p className="text-sm text-danger">{t("settings.saKeyWarning")}</p>
+            <div className="bg-bg border border-border rounded-sm p-3 text-xs font-mono break-all select-all" data-testid="new-service-account-key">
+              {newApiKey}
+            </div>
+            <Button variant="ghost" onClick={copyApiKey} data-testid="copy-service-account-key-btn">
+              <Copy size={14} /> {keyCopied ? t("settings.saCopied") : t("settings.saCopy")}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Field label={t("settings.saName")}>
+              <Input data-testid="service-account-name" value={saForm.name}
+                onChange={(e) => setSaForm({ ...saForm, name: e.target.value })} />
+            </Field>
+            <Field label={t("users.role")}>
+              <Select data-testid="service-account-role" value={saForm.role}
+                onChange={(e) => setSaForm({ ...saForm, role: e.target.value })}>
+                {SA_ROLES.map((r) => <option key={r} value={r}>{t(`roles.${r}`)}</option>)}
+              </Select>
+            </Field>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

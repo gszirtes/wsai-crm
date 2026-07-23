@@ -62,12 +62,14 @@ def to_out(db: Session, p: Project, user: User, can_view: bool = None) -> Projec
 
 
 @router.get("", response_model=list[ProjectOut],
-           summary="List projects", description="Paginated list of projects, optionally filtered by status, newest first. Total count is in the X-Total-Count response header. Private projects only appear for admin/manager, their owner, or invited members. `budget`/`hourly_rate` are null without view_financials.")
-def list_projects(response: Response, status: str = "", limit: int = 20, offset: int = 0,
+           summary="List projects", description="Paginated list of projects, optionally filtered by status or a case-insensitive name search, newest first. Total count is in the X-Total-Count response header. Private projects only appear for admin/manager, their owner, or invited members. `budget`/`hourly_rate` are null without view_financials.")
+def list_projects(response: Response, status: str = "", search: str = "", limit: int = 20, offset: int = 0,
                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Project).filter(visibility_filter(db, Project, "project", user))
     if status:
         q = q.filter(Project.status == status)
+    if search:
+        q = q.filter(Project.name.ilike(f"%{search}%"))
     total = q.count()
     limit = max(1, min(limit, 100))
     projects = q.order_by(Project.created_at.desc()).offset(max(0, offset)).limit(limit).all()

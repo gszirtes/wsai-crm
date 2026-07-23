@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Deal, Company, Contact, Activity, EventLog, User
@@ -12,6 +13,7 @@ from membership import add_member, remove_member, list_members
 from visibility import visibility_filter, can_see
 from financials import mask_deal_out, can_view_financials
 from deal_rules import check_owner_required, create_project_from_won_deal
+from rate_limit import limiter
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
 
@@ -24,16 +26,23 @@ def _to_out(db: Session, d: Deal, user: User, can_view: bool = None) -> DealOut:
 
 
 @router.get("", response_model=list[DealOut],
-           summary="List deals", description="List deals, optionally filtered by stage or unassigned=true (shared-inbox leads with no owner), newest first. Private deals only appear for admin/manager, their owner, or invited members. `value` is null without view_financials.")
-def list_deals(stage: str = "", unassigned: bool = False, db: Session = Depends(get_db),
-               user: User = Depends(get_current_user)):
+           summary="List deals", description="List deals, optionally filtered by stage, unassigned=true (shared-inbox leads with no owner), or a case-insensitive title search, newest first. limit/offset are optional -- omitted, every matching deal is returned (existing behavior the Kanban board relies on); when passed, the list is paginated and the total match count is in the X-Total-Count response header. Private deals only appear for admin/manager, their owner, or invited members. `value` is null without view_financials.")
+def list_deals(response: Response, stage: str = "", unassigned: bool = False, search: str = "",
+               limit: Optional[int] = None, offset: int = 0,
+               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Deal).filter(visibility_filter(db, Deal, "deal", user))
     if stage:
         q = q.filter(Deal.stage == stage)
     if unassigned:
         q = q.filter(Deal.owner_id.is_(None))
+    if search:
+        q = q.filter(Deal.title.ilike(f"%{search}%"))
+    response.headers["X-Total-Count"] = str(q.count())
     can_view = can_view_financials(db, user)
-    return [_to_out(db, d, user, can_view) for d in q.order_by(Deal.created_at.desc()).all()]
+    q = q.order_by(Deal.created_at.desc())
+    if limit is not None:
+        q = q.offset(max(0, offset)).limit(max(1, min(limit, 100)))
+    return [_to_out(db, d, user, can_view) for d in q.all()]
 
 
 @router.get("/{deal_id}/detail",
@@ -91,8 +100,9 @@ def get_deal(deal_id: str, db: Session = Depends(get_db),
 
 
 @router.post("", response_model=DealOut,
-            summary="Create a deal", description="owner_id is always set server-side, never accepted directly from the payload -- the one lever a client has over it is `unassigned` (default false): false means the creator becomes owner (existing behavior), true means owner_id stays None and the deal sits in the shared inbox (D1). A service-account-authenticated create always leaves the deal unassigned/ownerless regardless of this flag (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK.")
-def create_deal(payload: DealCreate, db: Session = Depends(get_db),
+            summary="Create a deal", description="owner_id is always set server-side, never accepted directly from the payload -- the one lever a client has over it is `unassigned` (default false): false means the creator becomes owner (existing behavior), true means owner_id stays None and the deal sits in the shared inbox (D1). A service-account-authenticated create always leaves the deal unassigned/ownerless regardless of this flag (owner_id is a FK to users.id; a service account has no row there), and isn't auto-added as a member either -- EntityMembership.user_id is the same FK. Rate-limited (60/minute) -- this is one of the MCP server's write tools' target routes (plan 6.3).")
+@limiter.limit("60/minute")
+def create_deal(request: Request, payload: DealCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_capability("manage_deals"))):
     data = payload.model_dump(exclude={"unassigned"})
     owner_id = None if payload.unassigned else owner_id_for(user)
@@ -130,8 +140,9 @@ def update_deal(deal_id: str, payload: DealCreate, db: Session = Depends(get_db)
 
 
 @router.patch("/{deal_id}/stage", response_model=DealOut,
-             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first. Otherwise any stage can move to any other stage; no other transition guard. Logs a stage_changed event. Moving into `won` auto-creates a Project from the deal (4.3) -- idempotent, so re-triggering won doesn't spawn a second one.")
-def update_stage(deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
+             summary="Change deal stage", description="Sets stage and recomputes probability from a fixed stage->probability table. Rejects moving past `qualified` if the deal has no owner (D1/BL-4) -- claim it first. Otherwise any stage can move to any other stage; no other transition guard. Logs a stage_changed event. Moving into `won` auto-creates a Project from the deal (4.3) -- idempotent, so re-triggering won doesn't spawn a second one. Rate-limited (60/minute) -- this is one of the MCP server's write tools' target routes (plan 6.3).")
+@limiter.limit("60/minute")
+def update_stage(request: Request, deal_id: str, payload: StageUpdate, db: Session = Depends(get_db),
                  user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d or not can_see(db, "deal", d, user):
@@ -167,8 +178,9 @@ def update_visibility(deal_id: str, payload: VisibilityUpdate, db: Session = Dep
 
 
 @router.patch("/{deal_id}/claim", response_model=DealOut,
-             summary="Claim an unassigned deal", description="Sets the caller as owner of a deal currently sitting in the shared inbox (owner_id IS NULL) and records claimed_at. Logs a claimed event. 400 if the deal already has an owner -- use PATCH /owner (reassign_owner capability) to reassign an already-owned deal instead.")
-def claim_deal(deal_id: str, db: Session = Depends(get_db),
+             summary="Claim an unassigned deal", description="Sets the caller as owner of a deal currently sitting in the shared inbox (owner_id IS NULL) and records claimed_at. Logs a claimed event. 400 if the deal already has an owner -- use PATCH /owner (reassign_owner capability) to reassign an already-owned deal instead. Rate-limited (60/minute) -- this is one of the MCP server's write tools' target routes (plan 6.3).")
+@limiter.limit("60/minute")
+def claim_deal(request: Request, deal_id: str, db: Session = Depends(get_db),
               user: User = Depends(require_capability("manage_deals"))):
     d = db.query(Deal).filter(Deal.id == deal_id).first()
     if not d or not can_see(db, "deal", d, user):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Project, Milestone, User
@@ -7,6 +7,7 @@ from auth import get_current_user, require_capability
 from utils import log_event, resolved_milestone_amount
 from visibility import can_see
 from financials import mask_milestone_out, can_view_financials
+from rate_limit import limiter
 
 router = APIRouter(prefix="/api/projects/{project_id}/milestones", tags=["milestones"])
 
@@ -64,8 +65,9 @@ def update_milestone(project_id: str, milestone_id: str, payload: MilestoneCreat
 
 
 @router.patch("/{milestone_id}/status", response_model=MilestoneOut,
-             summary="Change a milestone's work/payment status", description="work_status (in_progress/client_review/accepted) and payment_status (not_due/invoiceable/invoiced/paid) are independently settable and reversible in either direction (plan 4.1) -- pass either or both. Requires manage_projects. Every actual change logs a status_changed event.")
-def update_milestone_status(project_id: str, milestone_id: str, payload: MilestoneStatusUpdate,
+             summary="Change a milestone's work/payment status", description="work_status (in_progress/client_review/accepted) and payment_status (not_due/invoiceable/invoiced/paid) are independently settable and reversible in either direction (plan 4.1) -- pass either or both. Requires manage_projects. Every actual change logs a status_changed event. Rate-limited (60/minute) -- this is one of the MCP server's write tools' target routes (plan 6.3).")
+@limiter.limit("60/minute")
+def update_milestone_status(request: Request, project_id: str, milestone_id: str, payload: MilestoneStatusUpdate,
                             db: Session = Depends(get_db),
                             user: User = Depends(require_capability("manage_projects"))):
     _get_project_or_404(db, project_id, user)

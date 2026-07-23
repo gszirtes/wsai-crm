@@ -46,5 +46,29 @@ services:
     ports:
       - "3010:80"
 
+  # Phase 6: MCP server -- opt-in via the "mcp" compose profile, so a plain
+  # `docker compose up -d` never starts it (`profiles:` excludes a service
+  # from the default `up` unless that profile is explicitly activated).
+  # Bring it up with `docker compose --profile mcp up -d --build mcp-server`
+  # after minting a service account (Settings > Service Accounts UI or the
+  # /api/service-accounts API) and setting CRM_MCP_API_KEY in .env -- the
+  # server refuses every request (401) until that key is set, since it also
+  # doubles as the shared secret an MCP client must present back to it.
+  # Talks to `backend` over the same internal compose network, never
+  # touches the database directly.
+  mcp-server:
+    build: ./mcp-server
+    restart: unless-stopped
+    profiles: ["mcp"]
+    depends_on:
+      - backend
+    environment:
+      CRM_API_BASE_URL: http://backend:8001
+      CRM_API_KEY: ${CRM_MCP_API_KEY:-}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8100
+    ports:
+      - "127.0.0.1:8100:8100"
+
 volumes:
   pgdata:
