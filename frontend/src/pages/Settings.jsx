@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Calendar, Check, X, ShieldCheck, Timer, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Sparkles, Calendar, Check, X, ShieldCheck, Timer, KeyRound, Plus, Trash2, Copy } from "lucide-react";
 import api, { formatApiError } from "../api";
 import { Button, Input, Select, Field, Badge, Modal } from "../components/common";
 
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [saModal, setSaModal] = useState(false);
   const [saForm, setSaForm] = useState(emptyServiceAccount);
   const [newApiKey, setNewApiKey] = useState(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   const loadServiceAccounts = useCallback(() => {
     api.get("/service-accounts").then((r) => setServiceAccounts(r.data))
@@ -103,7 +104,12 @@ export default function SettingsPage() {
     }
   };
 
-  const openNewServiceAccount = () => { setSaForm(emptyServiceAccount); setNewApiKey(null); setError(""); setSaModal(true); };
+  const openNewServiceAccount = () => { setSaForm(emptyServiceAccount); setNewApiKey(null); setKeyCopied(false); setError(""); setSaModal(true); };
+
+  const closeServiceAccountModal = () => {
+    if (newApiKey && !window.confirm(t("settings.saKeyCloseConfirm"))) return;
+    setSaModal(false);
+  };
 
   const createServiceAccount = async () => {
     setError("");
@@ -117,7 +123,15 @@ export default function SettingsPage() {
     }
   };
 
+  const copyApiKey = () => {
+    navigator.clipboard.writeText(newApiKey).then(() => {
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2000);
+    });
+  };
+
   const toggleServiceAccountActive = async (sa) => {
+    if (sa.active && !window.confirm(t("settings.saRevokeConfirm"))) return;
     try {
       await api.patch(`/service-accounts/${sa.id}`, { active: !sa.active });
       loadServiceAccounts();
@@ -341,9 +355,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Modal open={saModal} onClose={() => setSaModal(false)} title={t("settings.newServiceAccount")}
+      <Modal open={saModal} onClose={closeServiceAccountModal} title={t("settings.newServiceAccount")}
         footer={<>
-          <Button variant="ghost" onClick={() => setSaModal(false)}>{t("common.cancel")}</Button>
+          <Button variant="ghost" onClick={closeServiceAccountModal}>{newApiKey ? t("common.close") : t("common.cancel")}</Button>
           {!newApiKey && <Button onClick={createServiceAccount} data-testid="create-service-account-btn">{t("common.create")}</Button>}
         </>}>
         {newApiKey ? (
@@ -352,6 +366,9 @@ export default function SettingsPage() {
             <div className="bg-bg border border-border rounded-sm p-3 text-xs font-mono break-all select-all" data-testid="new-service-account-key">
               {newApiKey}
             </div>
+            <Button variant="ghost" onClick={copyApiKey} data-testid="copy-service-account-key-btn">
+              <Copy size={14} /> {keyCopied ? t("settings.saCopied") : t("settings.saCopy")}
+            </Button>
           </div>
         ) : (
           <>

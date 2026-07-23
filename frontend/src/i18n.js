@@ -260,6 +260,10 @@ const en = {
       saActive: "Active",
       saRevoked: "Revoked",
       saKeyWarning: "Copy this key now -- it won't be shown again.",
+      saKeyCloseConfirm: "You haven't copied this key. It won't be shown again -- close anyway?",
+      saCopy: "Copy",
+      saCopied: "Copied",
+      saRevokeConfirm: "Revoke this service account? Anything using its API key will stop working immediately.",
       noServiceAccounts: "No service accounts yet.",
     },
     ai: {
@@ -597,6 +601,10 @@ const hu = {
       saActive: "Aktív",
       saRevoked: "Visszavonva",
       saKeyWarning: "Másold ki most a kulcsot -- többé nem jelenik meg.",
+      saKeyCloseConfirm: "Még nem másoltad ki ezt a kulcsot. Többé nem jelenik meg -- mégis bezárod?",
+      saCopy: "Másolás",
+      saCopied: "Kimásolva",
+      saRevokeConfirm: "Visszavonod ezt a szolgáltatásfiókot? Ami az API-kulcsát használja, azonnal leáll.",
       noServiceAccounts: "Még nincs szolgáltatásfiók.",
     },
     ai: {
