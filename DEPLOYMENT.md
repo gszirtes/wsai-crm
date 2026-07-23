@@ -73,6 +73,35 @@ Copy backups off-box (Hetzner Storage Box / S3) for disaster recovery.
 git pull && docker compose up -d --build
 ```
 
+## 8. MCP server (AI-native access, optional)
+A separate `mcp-server` container exposes a bounded set of CRM operations
+(list/search leads, deals, projects; read a deal's timeline or pipeline
+analytics; create a lead, claim, change stage, log an activity, set a
+milestone's status) to an external AI agent over MCP. It talks to the
+CRM's own REST API — never the database directly — so every capability
+check, visibility rule, and financial-masking dependency it's subject to
+is identical to what a human user with the same role would see.
+
+To turn it on:
+1. Log in as admin → **Settings → Service accounts** → **New service account**.
+   Pick a role the same way you would for a human user (its capabilities
+   come from the same admin-configurable matrix). Copy the API key shown —
+   it's never shown again.
+2. Set `CRM_MCP_API_KEY=<that key>` in `.env`.
+3. `docker compose up -d --build mcp-server`
+
+The server listens on `127.0.0.1:8100` (not publicly exposed by default —
+put it behind the same reverse proxy as the frontend if an external agent
+needs to reach it over HTTPS). Point your MCP client at
+`http://<host>:8100/mcp`.
+
+Least-privilege note: give the service account only the capabilities the
+agent actually needs (e.g. `manage_deals` for lead creation, `view_financials`
+only if the agent should see deal values). Every write the agent makes is
+logged to the same EventLog audit trail as a human write, attributed to
+this service account (`actor_type="service"`), so `GET /api/event-logs`
+shows exactly what the agent did.
+
 ## Roles
 admin (full + users + settings), manager & user (full CRUD), guest (read-only).
 Seeded demo accounts are listed on the login screen — change/remove them for production.
