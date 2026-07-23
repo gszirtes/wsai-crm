@@ -12,8 +12,24 @@ Deliberately excludes delete, owner-reassignment, and visibility-change
 tools (plan 6.3: least-privilege first tool set -- the plan's own tool list
 names only the operations below; riskier writes are left for a later,
 explicitly-scoped addition rather than exposed by default).
+
+Transport-level auth: FastMCP's streamable_http_app() only wires up its
+built-in AuthenticationMiddleware when an auth_server_provider is passed to
+the FastMCP() constructor (verified against the installed SDK's
+FastMCP.streamable_http_app() source) -- it is not, since a static shared
+API key doesn't fit that OAuth-shaped hook. Without it, the transport has no
+request-level auth at all: any network-reachable caller gets full tool
+access as the one fixed identity in CRM_API_KEY. ApiKeyAuthMiddleware below
+closes that gap by requiring the same X-API-Key on every incoming MCP
+request, checked with a constant-time comparison; it's a raw ASGI
+middleware (not Starlette's BaseHTTPMiddleware) so it doesn't buffer or
+interfere with the long-lived streaming responses streamable-http uses.
 """
+import hmac
 import os
+from typing import Optional
+import uvicorn
+from starlette.responses import JSONResponse
 from mcp.server.fastmcp import FastMCP
 from crm_client import CrmClient
 
@@ -22,24 +38,49 @@ mcp = FastMCP("wespeak-crm", host=os.environ.get("MCP_HOST", "0.0.0.0"),
 crm = CrmClient()
 
 
+class ApiKeyAuthMiddleware:
+    """Rejects any HTTP request that doesn't present the expected X-API-Key.
+    Fails closed: if no key is configured, every request is rejected rather
+    than silently allowed through unauthenticated."""
+
+    def __init__(self, app, expected_key: str):
+        self.app = app
+        self.expected_key = expected_key
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        provided = headers.get(b"x-api-key", b"").decode("utf-8", "replace")
+        if not self.expected_key or not hmac.compare_digest(provided, self.expected_key):
+            response = JSONResponse({"error": "Missing or invalid X-API-Key"}, status_code=401)
+            return await response(scope, receive, send)
+        return await self.app(scope, receive, send)
+
+
 # ---------- Read tools ----------
 
 @mcp.tool()
-def list_deals(stage: str = "", unassigned: bool = False) -> list[dict]:
+def list_deals(stage: str = "", unassigned: bool = False, search: str = "",
+              limit: int = 20, offset: int = 0) -> list[dict]:
     """List deals, optionally filtered by stage (lead/qualified/proposal/
-    negotiation/won/lost) or unassigned=true for the shared-inbox leads
-    with no owner. Private deals the calling service account isn't a
-    member of are excluded, same as for any user. `value` is null unless
-    the service account's role has view_financials."""
-    return crm.get("/api/deals", params={"stage": stage, "unassigned": unassigned})
+    negotiation/won/lost), unassigned=true for the shared-inbox leads with
+    no owner, or a case-insensitive title search. Paginated. Private deals
+    the calling service account isn't a member of are excluded, same as
+    for any user. `value` is null unless the service account's role has
+    view_financials."""
+    return crm.get("/api/deals", params={"stage": stage, "unassigned": unassigned,
+                                         "search": search, "limit": limit, "offset": offset})
 
 
 @mcp.tool()
-def list_projects(status: str = "", limit: int = 20, offset: int = 0) -> list[dict]:
+def list_projects(status: str = "", search: str = "", limit: int = 20, offset: int = 0) -> list[dict]:
     """List projects, optionally filtered by status (planning/active/
-    on_hold/completed/cancelled), paginated. `budget`/`hourly_rate` are
-    null unless the service account's role has view_financials."""
-    return crm.get("/api/projects", params={"status": status, "limit": limit, "offset": offset})
+    on_hold/completed/cancelled) or a case-insensitive name search,
+    paginated. `budget`/`hourly_rate` are null unless the service
+    account's role has view_financials."""
+    return crm.get("/api/projects", params={"status": status, "search": search,
+                                             "limit": limit, "offset": offset})
 
 
 @mcp.tool()
@@ -76,7 +117,8 @@ def get_deal_flow_report() -> dict:
 
 @mcp.tool()
 def create_lead(title: str, value: float = 0, currency: str = "EUR",
-               company_id: str = None, contact_id: str = None, source: str = None) -> dict:
+               company_id: Optional[str] = None, contact_id: Optional[str] = None,
+               source: Optional[str] = None) -> dict:
     """Create a new deal (lead). A service-account-authenticated create
     always lands unassigned in the shared inbox regardless of any
     unassigned flag, since owner_id is a FK to users.id and a service
@@ -112,10 +154,10 @@ def change_deal_stage(deal_id: str, stage: str) -> dict:
 
 
 @mcp.tool()
-def log_activity(subject: str, type: str = "task", direction: str = None,
-                 deal_id: str = None, project_id: str = None,
-                 contact_id: str = None, company_id: str = None,
-                 description: str = None, due_date: str = None) -> dict:
+def log_activity(subject: str, type: str = "task", direction: Optional[str] = None,
+                 deal_id: Optional[str] = None, project_id: Optional[str] = None,
+                 contact_id: Optional[str] = None, company_id: Optional[str] = None,
+                 description: Optional[str] = None, due_date: Optional[str] = None) -> dict:
     """Log an activity (call/email/meeting/task/note). If linked to a
     deal_id with direction inbound/outbound, updates that deal's
     ball-in-court and last_contact_at automatically. due_date is an ISO
@@ -130,7 +172,7 @@ def log_activity(subject: str, type: str = "task", direction: str = None,
 
 @mcp.tool()
 def set_milestone_status(project_id: str, milestone_id: str,
-                         work_status: str = None, payment_status: str = None) -> dict:
+                         work_status: Optional[str] = None, payment_status: Optional[str] = None) -> dict:
     """Set a milestone's work_status (in_progress/client_review/accepted)
     and/or payment_status (not_due/invoiceable/invoiced/paid) -- pass
     either or both, independently settable and reversible. Requires
@@ -144,4 +186,6 @@ def set_milestone_status(project_id: str, milestone_id: str,
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    app = mcp.streamable_http_app()
+    app.add_middleware(ApiKeyAuthMiddleware, expected_key=os.environ.get("CRM_API_KEY", ""))
+    uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
