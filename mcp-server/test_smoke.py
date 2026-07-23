@@ -8,6 +8,14 @@ philosophy for a service that speaks MCP instead of plain HTTP: it uses the
 real MCP client protocol to call every tool through a live MCP server
 connection, not a mocked one.
 
+The CRM_API_KEY service account should have a role with view_financials,
+manage_deals, manage_projects, and view_all_reports (e.g. "manager") --
+several checks assert on values only visible with those capabilities.
+ADMIN_EMAIL/ADMIN_PASSWORD (defaults: the seeded demo admin, matching
+backend/tests/conftest.py) log in to mint two extra, disposable service
+accounts used only to prove visibility/financial-masking actually apply
+to MCP-tool calls, not just direct REST ones.
+
 Usage:
     CRM_API_BASE_URL=http://localhost:8010 \
     CRM_API_KEY=sk_... \
@@ -15,6 +23,7 @@ Usage:
     python test_smoke.py
 """
 import asyncio
+import json
 import os
 import sys
 import httpx
@@ -24,6 +33,8 @@ from mcp.client.streamable_http import streamablehttp_client
 MCP_URL = os.environ.get("MCP_URL", "http://localhost:8100/mcp")
 CRM_API_BASE_URL = os.environ.get("CRM_API_BASE_URL", "http://localhost:8010")
 CRM_API_KEY = os.environ["CRM_API_KEY"]
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@wespeak.ai")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 EXPECTED_TOOLS = {
     "list_deals", "list_projects", "get_deal_detail", "get_project_detail",
@@ -65,6 +76,38 @@ def rest_cleanup():
     client.close()
 
 
+_admin_client = None
+_extra_service_accounts = []
+
+
+def rest_admin_login():
+    """Cookie-authenticated client as the seeded admin -- only used to mint
+    disposable, low-privilege service accounts for the visibility/masking
+    checks below (service accounts can't create other service accounts;
+    that route is admin-only)."""
+    global _admin_client
+    _admin_client = httpx.Client(base_url=CRM_API_BASE_URL)
+    r = _admin_client.post("/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    r.raise_for_status()
+    return _admin_client
+
+
+def mint_service_account(name: str, role: str) -> str:
+    r = _admin_client.post("/api/service-accounts", json={"name": name, "role": role})
+    r.raise_for_status()
+    data = r.json()
+    _extra_service_accounts.append(data["id"])
+    return data["api_key"]
+
+
+def rest_admin_cleanup():
+    if _admin_client is None:
+        return
+    for sa_id in _extra_service_accounts:
+        _admin_client.delete(f"/api/service-accounts/{sa_id}")
+    _admin_client.close()
+
+
 async def call(session: ClientSession, name: str, args: dict):
     import json
     result = await session.call_tool(name, args)
@@ -86,9 +129,9 @@ async def call(session: ClientSession, name: str, args: dict):
 
 
 async def main():
-    company_id, project_id, milestone_id = rest_setup()
     passed = []
     try:
+        company_id, project_id, milestone_id = rest_setup()
         async with streamablehttp_client(MCP_URL, headers={"X-API-Key": CRM_API_KEY}) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -115,6 +158,14 @@ async def main():
                 assert created["owner_id"] is None, "service-account create must land unassigned"
                 passed.append("create_lead: created, unassigned as expected")
 
+                found = await call(session, "list_deals", {"search": "TEST_mcp smoke lead"})
+                assert any(d["id"] == deal_id for d in found), "search should find the just-created deal by title"
+                passed.append("list_deals: search param finds the created deal")
+
+                found_projects = await call(session, "list_projects", {"search": "TEST_mcp smoke project"})
+                assert any(p["id"] == project_id for p in found_projects), "search should find the setup project by name"
+                passed.append("list_projects: search param finds the setup project")
+
                 claim_result = await session.call_tool("claim_deal", {"deal_id": deal_id})
                 assert claim_result.isError, "claim_deal must be rejected for a service account"
                 passed.append("claim_deal: correctly rejected for service-account principal")
@@ -125,7 +176,8 @@ async def main():
 
                 detail = await call(session, "get_deal_detail", {"deal_id": deal_id})
                 assert detail["deal"]["id"] == deal_id
-                passed.append("get_deal_detail: fetched")
+                assert detail["deal"]["value"] == 500, "the setup account's role must have view_financials"
+                passed.append("get_deal_detail: fetched, real value visible with view_financials")
 
                 timeline = await call(session, "get_deal_timeline", {"deal_id": deal_id})
                 assert isinstance(timeline, list) and len(timeline) >= 1
@@ -143,18 +195,80 @@ async def main():
                 passed.append("log_activity: ball_in_court updated automatically")
 
                 flow = await call(session, "get_deal_flow_report", {})
-                assert "won" in flow and "lost" in flow
-                passed.append("get_deal_flow_report: shape OK")
+                for key in ("won", "lost", "won_lost_ratio", "avg_passes_to_won", "avg_days_per_stage"):
+                    assert key in flow, f"deal-flow report missing {key}"
+                assert isinstance(flow["avg_days_per_stage"], dict)
+                passed.append("get_deal_flow_report: full shape present (won/lost/ratio/passes/stage-days)")
 
                 proj_detail = await call(session, "get_project_detail", {"project_id": project_id})
                 assert proj_detail["project"]["id"] == project_id
-                passed.append("get_project_detail: fetched")
+                assert "health" in proj_detail and "logged_hours" in proj_detail and "billable_amount" in proj_detail
+                passed.append("get_project_detail: fetched with health/hours/billing fields present")
 
                 ms = await call(session, "set_milestone_status", {
                     "project_id": project_id, "milestone_id": milestone_id, "payment_status": "invoiced",
                 })
                 assert ms["payment_status"] == "invoiced"
                 passed.append("set_milestone_status: updated")
+
+        # -- Transport auth: the MCP server itself must reject a missing or
+        # wrong X-API-Key before any MCP handshake even starts (the fix for
+        # the audit's HIGH finding -- FastMCP mounts with no auth of its own
+        # unless something wraps it). Plain HTTP, not the MCP client, since a
+        # 401 happens before the protocol layer gets involved.
+        for bad_headers, label in [({}, "missing"), ({"X-API-Key": "not-the-real-key"}, "wrong")]:
+            r = httpx.post(MCP_URL, headers={
+                **bad_headers,
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            }, json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            assert r.status_code == 401, f"{label} X-API-Key should get 401, got {r.status_code}"
+        passed.append("transport auth: missing/wrong X-API-Key rejected with 401")
+
+        # -- Visibility isolation + financial masking. Proven at the REST
+        # layer the MCP tools proxy to (crm_client.py adds no logic of its
+        # own -- see server.py's docstring), not via a second MCP session:
+        # the transport's ApiKeyAuthMiddleware gates the connection to the
+        # ONE identity baked into this server's own CRM_API_KEY at startup
+        # (that's the whole point of the auth fix above), so a differently
+        # -privileged service account's key can never open an MCP session
+        # against *this* running server at all -- only against the REST API
+        # directly. What's actually testable, and what matters (per plan
+        # 6.1: "identical to what a human user with that role would see"),
+        # is that the REST responses these tools relay verbatim are
+        # themselves visibility/masking-correct for a role that isn't this
+        # server's own.
+        rest_admin_login()
+        try:
+            main_client = httpx.Client(base_url=CRM_API_BASE_URL, headers={"X-API-Key": CRM_API_KEY})
+            private_deal = main_client.post("/api/deals", json={
+                "title": "TEST_mcp smoke private deal", "value": 999, "unassigned": True,
+            }).json()
+            private_deal_id = private_deal["id"]
+            _created_ids["deals"].append(private_deal_id)
+            vis = main_client.patch(f"/api/deals/{private_deal_id}/visibility", json={"visibility": "private"})
+            vis.raise_for_status()
+            main_client.close()
+
+            # role="user" (not admin/manager -- those bypass visibility
+            # entirely) with no EntityMembership row on the private deal.
+            outsider_key = mint_service_account("TEST_mcp smoke outsider", "user")
+            outsider_client = httpx.Client(base_url=CRM_API_BASE_URL, headers={"X-API-Key": outsider_key})
+            outsider_resp = outsider_client.get(f"/api/deals/{private_deal_id}/detail")
+            outsider_client.close()
+            assert outsider_resp.status_code == 404, \
+                "a non-member, non-admin/manager account must not see a private deal"
+            passed.append("visibility: private deal invisible to a non-member account (REST layer the MCP tool proxies to)")
+
+            # role="guest" -- D6: view_financials is off by default for guest.
+            guest_key = mint_service_account("TEST_mcp smoke guest", "guest")
+            guest_client = httpx.Client(base_url=CRM_API_BASE_URL, headers={"X-API-Key": guest_key})
+            guest_detail = guest_client.get(f"/api/deals/{deal_id}/detail").json()
+            guest_client.close()
+            assert guest_detail["deal"]["value"] is None, "guest role (view_financials off) must see a masked value"
+            passed.append("financial masking: guest-role account sees value: null (REST layer the MCP tool proxies to)")
+        finally:
+            rest_admin_cleanup()
 
     finally:
         rest_cleanup()
