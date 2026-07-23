@@ -82,18 +82,25 @@ CRM's own REST API — never the database directly — so every capability
 check, visibility rule, and financial-masking dependency it's subject to
 is identical to what a human user with the same role would see.
 
+The container only starts under the `mcp` Compose profile — a plain
+`docker compose up -d` never brings it up.
+
 To turn it on:
 1. Log in as admin → **Settings → Service accounts** → **New service account**.
    Pick a role the same way you would for a human user (its capabilities
    come from the same admin-configurable matrix). Copy the API key shown —
    it's never shown again.
 2. Set `CRM_MCP_API_KEY=<that key>` in `.env`.
-3. `docker compose up -d --build mcp-server`
+3. `docker compose --profile mcp up -d --build mcp-server`
 
 The server listens on `127.0.0.1:8100` (not publicly exposed by default —
-put it behind the same reverse proxy as the frontend if an external agent
-needs to reach it over HTTPS). Point your MCP client at
-`http://<host>:8100/mcp`.
+put it behind the same reverse proxy as the frontend, over HTTPS, if an
+external agent needs to reach it). Point your MCP client at
+`http://<host>:8100/mcp`, and configure it to send the **same** API key
+back as an `X-API-Key` header on every request — the server rejects any
+request missing it or presenting the wrong value (and rejects everything
+if the key isn't set at all), so this doubles as the MCP server's own
+authentication, not just its credential to the CRM backend.
 
 Least-privilege note: give the service account only the capabilities the
 agent actually needs (e.g. `manage_deals` for lead creation, `view_financials`
