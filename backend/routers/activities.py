@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Activity, Deal, Project, User
@@ -7,6 +7,7 @@ from auth import get_current_user, require_write
 from utils import log_event, owner_id_for
 from visibility import can_see
 from deal_rules import apply_ball_in_court_for_activity
+from rate_limit import limiter
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
@@ -57,8 +58,9 @@ def list_activities(completed: str = "", contact_id: str = "", deal_id: str = ""
 
 
 @router.post("", response_model=ActivityOut,
-            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project. If linked to a deal_id and direction is inbound/outbound, updates that deal's ball_in_court and last_contact_at (2.2). 404 if deal_id/project_id points at a private one this user isn't admin/manager/owner/member of.")
-def create_activity(payload: ActivityCreate, db: Session = Depends(get_db),
+            summary="Create an activity", description="owner_id is always set server-side to the creating user. Logs a created event, plus an activity_logged event on every linked contact/company/deal/project. If linked to a deal_id and direction is inbound/outbound, updates that deal's ball_in_court and last_contact_at (2.2). 404 if deal_id/project_id points at a private one this user isn't admin/manager/owner/member of. Rate-limited (60/minute) -- this is one of the MCP server's write tools' target routes (plan 6.3).")
+@limiter.limit("60/minute")
+def create_activity(request: Request, payload: ActivityCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_write)):
     _check_deal_project_visible(db, payload.deal_id, payload.project_id, user)
     a = Activity(**payload.model_dump(), owner_id=owner_id_for(user))
