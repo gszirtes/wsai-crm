@@ -46,5 +46,22 @@ services:
     ports:
       - "3010:80"
 
+  # Phase 6: MCP server -- optional, only starts if CRM_MCP_API_KEY is set
+  # (a service account minted via the Settings > Service Accounts UI or the
+  # /api/service-accounts API). Talks to `backend` over the same internal
+  # compose network, never touches the database directly.
+  mcp-server:
+    build: ./mcp-server
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      CRM_API_BASE_URL: http://backend:8001
+      CRM_API_KEY: ${CRM_MCP_API_KEY:-}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8100
+    ports:
+      - "127.0.0.1:8100:8100"
+
 volumes:
   pgdata:
